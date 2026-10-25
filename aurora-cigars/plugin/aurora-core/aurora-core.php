@@ -29,6 +29,7 @@ function aurora_defaults() {
 		'no_ship_en'    => 'USA, Australia, Singapore, Brazil, India',
 		'shipping_note' => 'DHL Express 全球直发，15–20 个工作日送达，EXW 条款。货物发出后不接受退货。',
 		'trust_line'    => '中东授权经销商直供 · 每盒可查防伪',
+		'private_mode'  => 1,
 	);
 }
 
@@ -70,6 +71,7 @@ function aurora_settings_page() {
 		'no_ship_en'    => '不发货地区（English）',
 		'shipping_note' => '物流说明',
 		'trust_line'    => '信任背书文案',
+		'private_mode'  => '内部预览模式（1 = 开启，0 = 关闭，正式上线时改成 0）',
 	);
 	echo '<div class="wrap"><h1>Aurora 设置</h1><form method="post" action="options.php">';
 	settings_fields( 'aurora_core' );
@@ -83,9 +85,65 @@ function aurora_settings_page() {
 		);
 	}
 	echo '</table>';
+	printf(
+		'<p><strong>预览分享链接</strong>（内部预览模式下，没有后台账号的人用这个链接也能看网站）：<br><code>%s</code></p>',
+		esc_html( add_query_arg( 'aurora_preview', aurora_preview_key(), home_url( '/' ) ) )
+	);
 	submit_button();
 	echo '</form></div>';
 }
+
+/* -------------------------------------------------------------------------
+ * 内部预览模式：未登录访客只看到「即将上线」，搜索引擎不收录
+ * ---------------------------------------------------------------------- */
+
+function aurora_preview_key() {
+	$key = get_option( 'aurora_preview_key' );
+	if ( ! $key ) {
+		$key = wp_generate_password( 16, false );
+		update_option( 'aurora_preview_key', $key, false );
+	}
+	return $key;
+}
+
+function aurora_private_mode() {
+	return 1 === absint( aurora_opt( 'private_mode' ) );
+}
+
+function aurora_can_preview() {
+	if ( is_user_logged_in() ) {
+		return true;
+	}
+	$key = aurora_preview_key();
+	if ( isset( $_GET['aurora_preview'] ) && hash_equals( $key, (string) wp_unslash( $_GET['aurora_preview'] ) ) ) {
+		setcookie( 'aurora_preview', $key, time() + 30 * DAY_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true );
+		return true;
+	}
+	return isset( $_COOKIE['aurora_preview'] ) && hash_equals( $key, (string) wp_unslash( $_COOKIE['aurora_preview'] ) );
+}
+
+add_action( 'template_redirect', function () {
+	if ( ! aurora_private_mode() || aurora_can_preview() ) {
+		return;
+	}
+	status_header( 503 );
+	header( 'Retry-After: 86400' );
+	header( 'X-Robots-Tag: noindex, nofollow' );
+	nocache_headers();
+	?><!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Aurora Cigars</title>
+	<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0d0b;color:#bfb6a6;font-family:Georgia,"Songti SC",serif;text-align:center;padding:16px;box-sizing:border-box}h1{margin:0 0 .6em;color:#b08d57;font-weight:400;letter-spacing:.4em;font-size:28px}p{margin:.3em 0}</style></head>
+	<body><div><h1>AURORA</h1><p>网站即将上线</p><p style="font-style:italic">Coming soon</p></div></body></html><?php
+	exit;
+}, 0 );
+
+// 预览模式下整站 noindex（包括已登录时看到的页面）
+add_filter( 'wp_robots', function ( $robots ) {
+	if ( aurora_private_mode() ) {
+		$robots['noindex']  = true;
+		$robots['nofollow'] = true;
+	}
+	return $robots;
+} );
 
 /* -------------------------------------------------------------------------
  * 目录模式：关闭购物车与结账
@@ -109,6 +167,11 @@ add_filter( 'woocommerce_loop_add_to_cart_link', function ( $html, $product ) {
 		esc_url( $product->get_permalink() )
 	);
 }, 10, 2 );
+
+// 没填价格的产品显示「价格请询价」
+add_filter( 'woocommerce_empty_price_html', function () {
+	return '<span class="aurora-por">价格请询价 · Price on request</span>';
+} );
 
 // 去掉 Astra/WooCommerce 头部的购物车图标与迷你购物车
 add_filter( 'astra_header_cart_enabled', '__return_false' );
@@ -161,11 +224,14 @@ function aurora_inquiry_message( $product ) {
 	}
 	$spec  = aurora_spec_line( $product );
 	$price = $product->get_price();
+	if ( '' === (string) $price ) {
+		return trim( sprintf( '您好，我想询价：%s %s，请告知价格与库存。', $name, $spec ) );
+	}
 	return trim( sprintf(
 		'您好，我想询价：%s %s，USD %s/盒，请确认库存。',
 		$name,
 		$spec,
-		'' !== $price ? wc_format_localized_price( $price ) : '—'
+		wc_format_localized_price( $price )
 	) );
 }
 

@@ -115,6 +115,8 @@ a { color: var(--au-gold-deep); }
 	font-size: 30px;
 	color: var(--au-black);
 }
+.aurora-por { font-family: var(--au-sans); font-size: 15px; letter-spacing: .08em; color: var(--au-gold-deep); }
+.single-product .summary .price:has(.aurora-por)::after { content: none; }
 .single-product .summary .price::after {
 	content: " / 盒";
 	font-family: var(--au-sans);

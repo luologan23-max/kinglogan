@@ -13,6 +13,7 @@
 | `plugin/aurora-core/` | 网站功能插件（见下文） |
 | `dist/aurora-core.zip` | 打包好的插件，直接上传到 WP 后台 |
 | `scripts/aurora_setup.py` | 一键配置 WooCommerce、导入产品、创建页面和导航 |
+| `content/catalog.csv` | 80 款标准型号目录（10 个品牌常规款，规格齐全，价格空着 = 显示「请询价」），由 `tools/build_catalog.py` 生成 |
 | `content/brands.json` | 10 个品牌的中英文介绍（顺序 = 首页品牌宫格顺序） |
 | `content/pages/*.html` | 首页、关于、防伪查验、常见问题、批发合作、配送与条款 |
 | `content/images/*.jpg` | 10 个品牌 + Aurora 通用的产品图（1600×1600，自行渲染，无版权问题） |
@@ -40,6 +41,8 @@
   - `[aurora_products limit="8" brand="cohiba"]` 精选产品
   - `[aurora_brand_nav]` 品牌筛选条
   - `[aurora_footer]` 页脚（不用 Astra 时）
+- **内部预览模式**（默认开启）：没登录后台的访客只能看到「即将上线」页面，整站对搜索引擎 noindex。在「Aurora 设置」页面可以复制「预览分享链接」，发给朋友看效果用。正式上线时把「内部预览模式」改成 0
+- **没填价格的产品**显示「价格请询价」，询价消息改为「请告知价格与库存」
 - **后台设置**：WooCommerce → Aurora 设置，可以改 WhatsApp 号码、年龄、不发货地区、物流文案
 
 ## 上线步骤
@@ -55,11 +58,14 @@ export AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx'
 
 python3 aurora_setup.py check                                   # 测试连接
 python3 aurora_setup.py configure                               # 设置 USD、迪拜，关闭配送
+python3 aurora_setup.py import ../content/catalog.csv            # 先上 80 款标准型号（可选）
 python3 aurora_setup.py import ~/路径/aurora_products_full.csv --dry-run   # 先看字段映射对不对
 python3 aurora_setup.py import ~/路径/aurora_products_full.csv             # 正式导入（按 SKU 去重，可以重复跑）
 python3 aurora_setup.py pages                                   # 创建 6 个页面，并设首页
 python3 aurora_setup.py images                                  # 给没图的产品配品牌图 + 品牌分类封面
 python3 aurora_setup.py images --photos ~/实拍图                 # 以后有实拍图：按 SKU 命名（COH-ROB-25.jpg，图集 COH-ROB-25-2.jpg）
+python3 aurora_setup.py images --urls temp_images.csv            # 内部预览用的临时网图（两列：sku,url）
+python3 aurora_setup.py images --clear-temp                      # 上线前把临时网图全部换回品牌图
 python3 aurora_setup.py menu                                    # 创建主导航
 python3 aurora_setup.py cleanup                                 # 停用 YITH、Click to Chat、PayPal
 ```
@@ -69,6 +75,10 @@ python3 aurora_setup.py cleanup                                 # 停用 YITH、
 如果 CSV 的列名没有被自动识别，用 `--map` 手动指定，例如：`--map price=零售价USD --map name_cn=产品中文名`。运行 `--dry-run` 时会列出所有可用字段。
 
 4. **停用不再需要的插件**：运行 `cleanup` 即可，这些插件随时可以在后台重新启用
+
+## 图片来源规则
+
+每款产品都记录了图片来源 `aurora_image_source`，优先级是：实拍图（photo）> 临时网图（temp）> 品牌渲染图（brand）。临时网图只能在内部预览模式下用；正式上线前，要么换成实拍图或供应商授权图，要么运行 `--clear-temp` 换回品牌图。
 
 ## 还没做的
 

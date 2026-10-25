@@ -107,7 +107,10 @@ class H(BaseHTTPRequestHandler):
             for item in body.get("update", []):
                 for i, prod in enumerate(state["products"]):
                     if prod["id"] == item["id"]:
-                        state["products"][i] = dict(prod, **item)
+                        # 与 WooCommerce 一致：meta_data 按 key 合并，不整体覆盖
+                        meta = {m["key"]: m for m in prod.get("meta_data", [])}
+                        meta.update({m["key"]: m for m in item.get("meta_data", [])})
+                        state["products"][i] = dict(prod, **dict(item, meta_data=list(meta.values())))
                         res["update"].append(state["products"][i])
             return self.send(200, res)
         if p == "wp/v2/pages":

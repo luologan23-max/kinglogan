@@ -24,7 +24,9 @@ function apply_filters( $tag, $value, ...$args ) {
 function add_shortcode( $tag, $cb ) { $GLOBALS['shortcodes'][ $tag ] = $cb; }
 function shortcode_atts( $pairs, $atts ) { return array_merge( $pairs, (array) $atts ); }
 function plugin_dir_url( $f ) { return './'; }
-function get_option( $k, $d = false ) { return 'default_product_cat' === $k ? 15 : $d; }
+$GLOBALS['options'] = array( 'default_product_cat' => 15 );
+function get_option( $k, $d = false ) { return array_key_exists( $k, $GLOBALS['options'] ) ? $GLOBALS['options'][ $k ] : $d; }
+function update_option( $k, $v ) { $GLOBALS['options'][ $k ] = $v; return true; }
 function esc_html( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }
 function esc_attr( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }
 function esc_url( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES ); }

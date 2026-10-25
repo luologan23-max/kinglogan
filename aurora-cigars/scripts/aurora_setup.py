@@ -13,6 +13,8 @@
   python3 aurora_setup.py pages                       # 创建首页、关于、防伪查验、FAQ、批发、条款页面，并设为首页
   python3 aurora_setup.py images                      # 给没有图片的产品配品牌图，并设置品牌分类封面
   python3 aurora_setup.py images --photos ~/实拍图     # 按 SKU 命名的实拍图替换（COH-ROB-25.jpg、COH-ROB-25-2.jpg…）
+  python3 aurora_setup.py images --urls temp.csv      # 临时网图（sku,url），仅供内部预览
+  python3 aurora_setup.py images --clear-temp         # 临时图全部换回品牌图
   python3 aurora_setup.py menu                        # 创建主导航
   python3 aurora_setup.py cleanup                     # 停用 YITH / Click to Chat / PayPal（不在 all 里）
   python3 aurora_setup.py all aurora_products_full.csv
@@ -414,19 +416,43 @@ def sku_photos(photo_dir, skus):
     return {k: [p for _, p in sorted(v)] for k, v in groups.items()}, unmatched
 
 
-def cmd_images(wp, photo_dir=None, dry_run=False):
+def read_image_urls(path):
+    """临时图清单 CSV：两列 sku,url（有表头）。返回 {SKU: [url, …]}，同一 SKU 多行即图集。"""
+    urls = {}
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            row = {norm(k): (v or "").strip() for k, v in row.items()}
+            sku, url = row.get("sku", "").upper(), row.get("url", "")
+            if sku and url.startswith("http"):
+                urls.setdefault(sku, []).append(url)
+    return urls
+
+
+def image_source(p):
+    return next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_image_source"), "")
+
+
+def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False):
+    """图片来源优先级：实拍图（photo）> 临时网图（temp）> 品牌渲染图（brand）。
+    每款产品记录 aurora_image_source，便于之后整批替换临时图。"""
     if photo_dir and not os.path.isdir(photo_dir):
         raise SystemExit(f"✗ 找不到图片目录：{photo_dir}")
     brand_ids = brand_media(wp, dry_run)
     products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,images,categories,meta_data", "status": "any"})
-    photos, unmatched = sku_photos(photo_dir, {(p.get("sku") or "").upper() for p in products if p.get("sku")})
+    skus = {(p.get("sku") or "").upper() for p in products if p.get("sku")}
+    photos, unmatched = sku_photos(photo_dir, skus)
     if photo_dir:
         print(f"实拍图目录：匹配 {len(photos)} 个 SKU")
         for name in unmatched:
             print(f"! 未匹配任何 SKU，跳过：{name}")
+    web = read_image_urls(url_csv) if url_csv else {}
+    if url_csv:
+        print(f"临时图清单：{len(web)} 个 SKU" + "".join(f"\n! 清单里的 SKU 不存在：{k}" for k in web if k not in skus))
     if dry_run:
         for sku, files in photos.items():
-            print(f"[dry-run] {sku} ← {', '.join(os.path.basename(f) for f in files)}")
+            print(f"[dry-run] 实拍 {sku} ← {', '.join(os.path.basename(f) for f in files)}")
+        for sku, links in web.items():
+            print(f"[dry-run] 临时 {sku} ← {links[0]}" + (f" 等 {len(links)} 张" if len(links) > 1 else ""))
         return
 
     # 品牌分类封面
@@ -436,26 +462,40 @@ def cmd_images(wp, photo_dir=None, dry_run=False):
             wp.req("POST", f"wc/v3/products/categories/{cat['id']}", {"image": {"id": brand_ids[brand["slug"]]}})
             print(f"✓ 分类封面：{cat['name']}")
 
-    updates, real, fallback = [], 0, 0
+    def brand_image(p):
+        name = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_brand"), "")
+        name = name or next((c["name"] for c in p.get("categories", [])), "")
+        _, brand = find_brand(name)
+        return brand_ids.get(brand["slug"] if brand else "aurora") or brand_ids.get("aurora")
+
+    def tagged(p, images, source):
+        return {"id": p["id"], "images": images, "meta_data": [{"key": "aurora_image_source", "value": source}]}
+
+    local, remote = [], []  # 远程图片要服务器下载，分小批提交
+    counts = {"photo": 0, "temp": 0, "brand": 0}
     for p in products:
-        sku = (p.get("sku") or "").upper()
+        sku, src = (p.get("sku") or "").upper(), image_source(p)
         if sku in photos:
             ids = [wp.upload(f, os.path.basename(f), p["name"]) for f in photos[sku]]
-            updates.append({"id": p["id"], "images": [{"id": i} for i in ids]})
-            real += 1
-            continue
-        if p.get("images"):
-            continue  # 已有图片（含之前配的品牌图）不动
-        brand_name = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_brand"), "")
-        brand_name = brand_name or next((c["name"] for c in p.get("categories", [])), "")
-        _, brand = find_brand(brand_name)
-        media = brand_ids.get(brand["slug"] if brand else "aurora") or brand_ids.get("aurora")
-        if media:
-            updates.append({"id": p["id"], "images": [{"id": media}]})
-            fallback += 1
-    for i in range(0, len(updates), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
-    print(f"✓ 实拍图 {real} 款，品牌图 {fallback} 款")
+            local.append(tagged(p, [{"id": i} for i in ids], "photo"))
+            counts["photo"] += 1
+        elif sku in web and src != "photo":
+            remote.append(tagged(p, [{"src": u, "alt": p["name"]} for u in web[sku]], "temp"))
+            counts["temp"] += 1
+        elif (not p.get("images") or (clear_temp and src == "temp")) and brand_image(p):
+            local.append(tagged(p, [{"id": brand_image(p)}], "brand"))
+            counts["brand"] += 1
+    for i in range(0, len(local), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": local[i:i + 50]})
+    errors = 0
+    for i in range(0, len(remote), 5):
+        res, _ = wp.req("POST", "wc/v3/products/batch", {"update": remote[i:i + 5]})
+        for item in res.get("update", []):
+            if item.get("error"):
+                errors += 1
+                print(f"! 临时图下载失败（产品 {item.get('id')}）：{item['error'].get('message')}")
+        print(f"  临时图 {min(i + 5, len(remote))}/{len(remote)}")
+    print(f"✓ 实拍图 {counts['photo']} 款，临时图 {counts['temp'] - errors} 款，品牌图 {counts['brand']} 款")
 
 
 def cmd_menu(wp, dry_run=False):
@@ -493,6 +533,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="只预览，不写入网站")
     ap.add_argument("--limit", type=int, help="只导入前 N 行（测试用）")
     ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 命名")
+    ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
+    ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     args = ap.parse_args()
 
     overrides = {}
@@ -519,7 +561,7 @@ def main():
     if args.command in ("import", "all"):
         cmd_import(wp, args.csv, overrides, args.dry_run, args.limit)
     if args.command in ("images", "all"):
-        cmd_images(wp, args.photos, args.dry_run)
+        cmd_images(wp, args.photos, args.urls, args.clear_temp, args.dry_run)
     if args.command in ("pages", "all"):
         cmd_pages(wp, args.dry_run)
     if args.command in ("menu", "all"):
