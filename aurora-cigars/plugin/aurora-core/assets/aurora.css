@@ -1,0 +1,362 @@
+/* Aurora Cigars — 英国老钱风：黑 · 白 · 金，极致留白 */
+:root {
+	--au-black: #0e0d0b;
+	--au-ink: #1c1a17;
+	--au-paper: #faf8f4;
+	--au-cream: #f1ece2;
+	--au-line: #e2dbcd;
+	--au-muted: #7a7266;
+	--au-gold: #b08d57;
+	--au-gold-deep: #8c6d3f;
+	--au-wa: #25d366;
+	--au-serif-display: "Bodoni Moda", "Didot", "Times New Roman", serif;
+	--au-serif: "EB Garamond", "Garamond", "Songti SC", "Noto Serif SC", serif;
+	--au-sans: "Jost", "Helvetica Neue", "PingFang SC", sans-serif;
+	--au-radius: 2px;
+}
+
+body {
+	background: var(--au-paper);
+	color: var(--au-ink);
+	font-family: var(--au-serif);
+	font-size: 18px;
+	line-height: 1.65;
+}
+
+h1, h2, h3, .site-title, .product_title, .woocommerce-loop-product__title,
+.price, .woocommerce-Price-amount {
+	font-family: var(--au-serif-display);
+	font-weight: 500;
+	letter-spacing: .01em;
+	color: var(--au-black);
+}
+
+a { color: var(--au-gold-deep); }
+
+[class^="aurora-"], [class^="aurora-"] *, [class*=" aurora-"] { box-sizing: border-box; }
+
+/* ---------- 按钮 ---------- */
+.aurora-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .55em;
+	min-height: 48px;
+	padding: .8em 1.6em;
+	border: 1px solid var(--au-black);
+	border-radius: var(--au-radius);
+	background: var(--au-black);
+	color: #fff;
+	font-family: var(--au-sans);
+	font-size: 14px;
+	font-weight: 500;
+	letter-spacing: .14em;
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	transition: background .2s, color .2s, border-color .2s;
+}
+.aurora-btn:hover { background: var(--au-ink); color: #fff; }
+.aurora-btn--ghost { background: transparent; color: var(--au-black); }
+.aurora-btn--ghost:hover { background: var(--au-black); color: #fff; }
+.aurora-btn--gold { background: var(--au-gold); border-color: var(--au-gold); }
+.aurora-btn--gold:hover { background: var(--au-gold-deep); border-color: var(--au-gold-deep); }
+.aurora-btn--wa { background: var(--au-wa); border-color: var(--au-wa); color: #fff; }
+.aurora-btn--wa:hover { background: #1ebe5b; border-color: #1ebe5b; color: #fff; }
+.aurora-link {
+	background: none;
+	border: 0;
+	color: var(--au-muted);
+	font-family: var(--au-sans);
+	font-size: 13px;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+/* ---------- 产品详情页 ---------- */
+.single-product div.product .summary {
+	display: flex;
+	flex-direction: column;
+}
+.single-product .summary .aurora-brand { order: 1; }
+.single-product .summary .product_title { order: 2; }
+.single-product .summary .aurora-name-en { order: 3; }
+.single-product .summary .aurora-tags { order: 4; }
+.single-product .summary .price { order: 5; }
+.single-product .summary .aurora-inquiry { order: 6; }
+
+.aurora-brand {
+	margin: 0 0 .3em;
+	font-family: var(--au-sans);
+	font-size: 12px;
+	letter-spacing: .28em;
+	text-transform: uppercase;
+	color: var(--au-gold-deep);
+}
+.single-product .product_title { font-size: clamp(28px, 5vw, 44px); line-height: 1.15; margin: 0; }
+.aurora-name-en { margin: .25em 0 0; font-style: italic; color: var(--au-muted); }
+
+.aurora-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 1em 0 .6em; }
+.aurora-tag {
+	padding: .3em .8em;
+	border: 1px solid var(--au-line);
+	font-family: var(--au-sans);
+	font-size: 12px;
+	letter-spacing: .08em;
+	color: var(--au-ink);
+	background: #fff;
+}
+.aurora-tag--stock { border-color: #9cbf9a; color: #2f6b31; }
+.aurora-tag--out { border-color: var(--au-line); color: var(--au-muted); }
+.aurora-tag--limited { border-color: var(--au-gold); color: var(--au-gold-deep); }
+
+.single-product .summary .price {
+	margin: .2em 0 .4em;
+	font-size: 30px;
+	color: var(--au-black);
+}
+.single-product .summary .price::after {
+	content: " / 盒";
+	font-family: var(--au-sans);
+	font-size: 14px;
+	color: var(--au-muted);
+}
+
+.aurora-inquiry { display: flex; flex-direction: column; gap: 14px; margin-top: .4em; }
+.aurora-spec-line { margin: 0; color: var(--au-muted); font-size: 16px; }
+
+.aurora-qty { display: flex; align-items: center; gap: 0; }
+.aurora-qty__label {
+	margin-right: auto;
+	font-family: var(--au-sans);
+	font-size: 13px;
+	letter-spacing: .12em;
+	text-transform: uppercase;
+}
+.aurora-qty__btn, .aurora-qty__input {
+	width: 48px;
+	height: 48px;
+	border: 1px solid var(--au-line);
+	background: #fff;
+	font-family: var(--au-sans);
+	font-size: 18px;
+	text-align: center;
+	color: var(--au-black);
+}
+.aurora-qty__btn { cursor: pointer; }
+.aurora-qty__input { border-left: 0; border-right: 0; -moz-appearance: textfield; }
+.aurora-qty__input::-webkit-outer-spin-button,
+.aurora-qty__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.aurora-wa-single { width: 100%; min-height: 58px; font-size: 15px; }
+.aurora-add-list { width: 100%; }
+.aurora-add-list.is-added,
+.aurora-add-list.is-added:hover { border-color: var(--au-gold); background: #fff; color: var(--au-gold-deep); }
+.aurora-trust {
+	margin: 0;
+	text-align: center;
+	font-family: var(--au-sans);
+	font-size: 12px;
+	letter-spacing: .1em;
+	color: var(--au-muted);
+}
+
+.aurora-spec-table { width: 100%; border-collapse: collapse; }
+.aurora-spec-table th, .aurora-spec-table td {
+	padding: .7em 0;
+	border-bottom: 1px solid var(--au-line);
+	text-align: left;
+	vertical-align: baseline;
+}
+.aurora-spec-table th {
+	width: 40%;
+	font-family: var(--au-sans);
+	font-size: 13px;
+	font-weight: 500;
+	letter-spacing: .06em;
+	color: var(--au-muted);
+}
+
+/* ---------- 商店列表 ---------- */
+.woocommerce ul.products li.product { text-align: center; }
+.woocommerce ul.products li.product .woocommerce-loop-product__title { font-size: 20px; }
+.woocommerce ul.products li.product .price { color: var(--au-black); font-size: 18px; }
+.woocommerce ul.products li.product .aurora-btn { margin-top: .6em; min-height: 42px; font-size: 12px; }
+.woocommerce span.onsale { display: none; }
+
+/* ---------- 品牌宫格 [aurora_brands] ---------- */
+.aurora-brands {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	background: var(--au-line);
+	border: 1px solid var(--au-line);
+}
+.aurora-brands__item {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: .3em;
+	min-height: 200px;
+	padding: 28px 16px;
+	background: var(--au-paper);
+	color: var(--au-black);
+	text-decoration: none;
+	transition: background .2s;
+}
+.aurora-brands__item:hover { background: var(--au-cream); }
+.aurora-brands__img { max-width: 120px; height: auto; margin-bottom: .6em; }
+.aurora-brands__name { font-family: var(--au-serif-display); font-size: 24px; }
+.aurora-brands__count {
+	font-family: var(--au-sans);
+	font-size: 12px;
+	letter-spacing: .14em;
+	color: var(--au-muted);
+}
+
+/* ---------- 悬浮按钮 ---------- */
+.aurora-wa-float {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 9990;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	background: var(--au-wa);
+	color: #fff;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+.aurora-wa-float:hover { color: #fff; transform: translateY(-1px); }
+.aurora-list-float {
+	position: fixed;
+	right: 20px;
+	bottom: 80px;
+	z-index: 9990;
+	padding: .65em 1.1em;
+	border: 1px solid var(--au-black);
+	border-radius: 24px;
+	background: var(--au-black);
+	color: #fff;
+	font-family: var(--au-sans);
+	font-size: 13px;
+	letter-spacing: .08em;
+	cursor: pointer;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+.aurora-list-float[hidden] { display: none; }
+.aurora-list-count {
+	display: inline-block;
+	min-width: 1.6em;
+	margin-left: .3em;
+	padding: 0 .4em;
+	border-radius: 1em;
+	background: var(--au-gold);
+	text-align: center;
+}
+
+/* ---------- 询价清单抽屉 ---------- */
+.aurora-drawer {
+	position: fixed;
+	inset: 0;
+	z-index: 9995;
+	display: flex;
+	justify-content: flex-end;
+	background: rgba(14, 13, 11, .45);
+}
+.aurora-drawer[hidden] { display: none; }
+.aurora-drawer__panel {
+	display: flex;
+	flex-direction: column;
+	width: min(420px, 100%);
+	height: 100%;
+	background: var(--au-paper);
+}
+.aurora-drawer__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20px 24px;
+	border-bottom: 1px solid var(--au-line);
+}
+.aurora-drawer__head h2 { margin: 0; font-size: 22px; }
+.aurora-drawer__close { border: 0; background: none; font-size: 28px; line-height: 1; cursor: pointer; color: var(--au-black); }
+.aurora-drawer__items { flex: 1; overflow-y: auto; margin: 0; padding: 8px 24px; list-style: none; }
+.aurora-drawer__item {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 4px 12px;
+	padding: 14px 0;
+	border-bottom: 1px solid var(--au-line);
+}
+.aurora-drawer__name { font-family: var(--au-serif-display); font-size: 17px; color: var(--au-black); text-decoration: none; }
+.aurora-drawer__meta { grid-column: 1 / 2; font-size: 14px; color: var(--au-muted); }
+.aurora-drawer__ctrl { grid-column: 2 / 3; grid-row: 1 / 3; display: flex; align-items: center; gap: 6px; }
+.aurora-drawer__ctrl input { width: 52px; height: 36px; border: 1px solid var(--au-line); text-align: center; font-family: var(--au-sans); }
+.aurora-drawer__remove { border: 0; background: none; color: var(--au-muted); font-size: 20px; cursor: pointer; }
+.aurora-drawer__empty { padding: 24px; color: var(--au-muted); }
+.aurora-drawer__empty[hidden] { display: none; }
+.aurora-drawer__foot { display: flex; flex-direction: column; gap: 10px; padding: 20px 24px; border-top: 1px solid var(--au-line); }
+
+/* ---------- 年龄验证 ---------- */
+.aurora-age {
+	position: fixed;
+	inset: 0;
+	z-index: 10000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: var(--au-black);
+	color: #fff;
+}
+.aurora-age[hidden] { display: none; }
+.aurora-age__box { max-width: 520px; text-align: center; }
+.aurora-age__mark {
+	margin: 0 0 1.5em;
+	font-family: var(--au-serif-display);
+	font-size: 28px;
+	letter-spacing: .4em;
+	color: var(--au-gold);
+}
+.aurora-age h2 { margin: 0; color: #fff; font-size: clamp(24px, 5vw, 34px); }
+.aurora-age__en { margin: .4em 0 2em; font-style: italic; color: #bfb6a6; }
+.aurora-age__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.aurora-age .aurora-btn--ghost { border-color: #5a544b; color: #fff; }
+.aurora-age__note { margin-top: 2.2em; font-size: 14px; color: #8e8679; }
+
+/* ---------- 首页区块 ---------- */
+.aurora-hero { padding: clamp(64px, 12vw, 140px) 16px clamp(48px, 8vw, 96px); text-align: center; }
+.aurora-hero__eyebrow {
+	font-family: var(--au-sans);
+	font-size: 12px;
+	letter-spacing: .32em;
+	text-transform: uppercase;
+	color: var(--au-gold-deep);
+}
+.aurora-hero h1 { margin: .4em 0 .3em; font-size: clamp(36px, 7vw, 72px); line-height: 1.08; }
+.aurora-hero p { max-width: 560px; margin: 0 auto 2em; color: var(--au-muted); }
+.aurora-section { max-width: 1120px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) 16px; }
+.aurora-section__title { margin: 0 0 1.2em; text-align: center; font-size: clamp(26px, 4vw, 38px); }
+.aurora-pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; text-align: center; }
+.aurora-pillars h3 { font-size: 20px; margin: 0 0 .4em; }
+.aurora-pillars p { margin: 0; color: var(--au-muted); font-size: 16px; }
+.aurora-band { background: var(--au-black); color: #e8e1d4; text-align: center; }
+.aurora-band .aurora-section__title { color: #fff; }
+.aurora-shipping small { color: var(--au-muted); }
+
+@media (max-width: 768px) {
+	body { font-size: 17px; }
+	.aurora-brands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.aurora-brands__item { min-height: 150px; }
+	.aurora-pillars { grid-template-columns: 1fr; gap: 28px; }
+	.single-product div.product .summary { margin-top: 18px; }
+	/* 产品页已有大号 WhatsApp 按钮，隐藏悬浮按钮，避免遮挡；清单按钮下移 */
+	.single-product .aurora-wa-float { display: none; }
+	.single-product .aurora-list-float { bottom: 20px; }
+	body { padding-bottom: 80px; }
+}
