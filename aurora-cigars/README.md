@@ -15,6 +15,8 @@
 | `scripts/aurora_setup.py` | 一键配置 WooCommerce、导入产品、创建页面和导航 |
 | `content/brands.json` | 10 个品牌的中英文介绍（顺序 = 首页品牌宫格顺序） |
 | `content/pages/*.html` | 首页、关于、防伪查验、常见问题、批发合作、配送与条款 |
+| `content/images/*.jpg` | 10 个品牌 + Aurora 通用的产品图（1600×1600，自行渲染，无版权问题） |
+| `tools/render_cigar.html`、`tools/render_all.js` | 品牌产品图渲染器，改了品牌后运行 `node tools/render_all.js` 重新出图 |
 | `scripts/build_zip.sh` | 修改插件后重新打包 |
 | `tests/` | 测试（模拟环境渲染、浏览器交互、模拟 WooCommerce API） |
 
@@ -56,6 +58,8 @@ python3 aurora_setup.py configure                               # 设置 USD、�
 python3 aurora_setup.py import ~/路径/aurora_products_full.csv --dry-run   # 先看字段映射对不对
 python3 aurora_setup.py import ~/路径/aurora_products_full.csv             # 正式导入（按 SKU 去重，可以重复跑）
 python3 aurora_setup.py pages                                   # 创建 6 个页面，并设首页
+python3 aurora_setup.py images                                  # 给没图的产品配品牌图 + 品牌分类封面
+python3 aurora_setup.py images --photos ~/实拍图                 # 以后有实拍图：按 SKU 命名（COH-ROB-25.jpg，图集 COH-ROB-25-2.jpg）
 python3 aurora_setup.py menu                                    # 创建主导航
 python3 aurora_setup.py cleanup                                 # 停用 YITH、Click to Chat、PayPal
 ```
@@ -70,7 +74,7 @@ python3 aurora_setup.py cleanup                                 # 停用 YITH、
 
 - 多语言（English / عربي）：需要先选定翻译插件（Polylang 或 TranslatePress）
 - n8n 自动化：把询价记录到表格或 CRM
-- 用你自己的产品图替换占位图（不能用竞品的照片）
+- 实拍产品图：已向 New Leaf（Amin）起草邮件索要官方产品图（Gmail 草稿）。拿到后放进一个文件夹，按 SKU 命名，跑 `images --photos` 即可替换。不能用零售商网站上的照片
 
 ## 产品 CSV 能识别的列
 

@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AUTH = "Basic " + base64.b64encode(b"tester:abcd efgh ijkl").decode()
-state = {"products": [], "cats": [], "pages": [], "settings": {}, "menus": [], "menu_items": [], "next": 100,
+state = {"products": [], "cats": [], "pages": [], "settings": {}, "menus": [], "menu_items": [], "media": [], "next": 100,
          "plugins": [{"plugin": "yith-woocommerce-wishlist/init", "name": "YITH Wishlist", "status": "active"},
                      {"plugin": "elementor/elementor", "name": "Elementor", "status": "active"}]}
 
@@ -36,7 +36,23 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         p = u.path.replace("/wp-json/", "")
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or "null")
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        if p == "wp/v2/media" and method == "POST":
+            disp = self.headers.get("Content-Disposition", "")
+            name = disp.split('filename="')[1].rstrip('"')
+            m = {"id": new_id(), "slug": name.rsplit(".", 1)[0].lower(), "bytes": len(raw), "type": self.headers.get("Content-Type")}
+            state["media"].append(m)
+            return self.send(201, m)
+        body = json.loads(raw or "null")
+        if p == "wp/v2/media":
+            hits = [m for m in state["media"] if q.get("search", "") in m["slug"]]
+            return self.send(200, hits)
+        if p.startswith("wp/v2/media/"):
+            mid = int(p.rsplit("/", 1)[1])
+            for m in state["media"]:
+                if m["id"] == mid:
+                    m.update(body)
+                    return self.send(200, m)
 
         if p == "wp/v2/users/me":
             return self.send(200, {"name": "Tester", "username": "tester", "roles": ["administrator"]})

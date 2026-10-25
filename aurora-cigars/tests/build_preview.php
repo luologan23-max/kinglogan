@@ -55,6 +55,24 @@ $GLOBALS['preview_products'] = array_map( function ( $d ) { return new Preview_P
 
 require dirname( __DIR__ ) . '/plugin/aurora-core/aurora-core.php';
 
+// 品牌渲染图缩成 640px 内嵌，同一品牌只编码一次
+function aurora_preview_img( $brand ) {
+	static $cache = array();
+	$slug = strtolower( trim( preg_replace( '/[^a-z0-9]+/i', '-', iconv( 'UTF-8', 'ASCII//TRANSLIT', $brand ) ), '-' ) );
+	$file = dirname( __DIR__ ) . "/content/images/$slug.jpg";
+	if ( ! file_exists( $file ) ) {
+		$file = dirname( __DIR__ ) . '/content/images/aurora.jpg';
+	}
+	if ( ! isset( $cache[ $file ] ) ) {
+		$src = imagecreatefromjpeg( $file );
+		$dst = imagescale( $src, 640, 640, IMG_BICUBIC );
+		ob_start();
+		imagejpeg( $dst, null, 82 );
+		$cache[ $file ] = 'data:image/jpeg;base64,' . base64_encode( ob_get_clean() );
+	}
+	return $cache[ $file ];
+}
+
 function aurora_preview_loop( $n ) {
 	$keep = isset( $GLOBALS['product'] ) ? $GLOBALS['product'] : null;
 	$out  = '<div class="woocommerce columns-4"><ul class="products columns-4">';
@@ -66,7 +84,7 @@ function aurora_preview_loop( $n ) {
 		ob_start();
 		do_action( 'woocommerce_after_shop_loop_item_title' );
 		$spec = ob_get_clean();
-		$out .= '<li class="product"><a href="#product" class="woocommerce-LoopProduct-link"><img class="aurora-ph" src="placeholder.svg" alt="">'
+		$out .= '<li class="product"><a href="#product" class="woocommerce-LoopProduct-link"><img class="aurora-ph" src="' . aurora_preview_img( $p->d['brand'] ) . '" alt="">'
 			. $brand . '<h2 class="woocommerce-loop-product__title">' . esc_html( $p->get_name() ) . '</h2>' . $spec
 			. '<span class="price"><span class="woocommerce-Price-amount">$' . number_format( (float) $p->get_price() ) . '</span></span></a>'
 			. apply_filters( 'woocommerce_loop_add_to_cart_link', '', $p ) . '</li>';
@@ -106,7 +124,6 @@ $footer = ob_get_clean();
 $brands_json = json_decode( file_get_contents( dirname( __DIR__ ) . '/content/brands.json' ), true );
 $css = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.css' );
 $js  = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.js' );
-$svg = 'data:image/svg+xml;base64,' . base64_encode( file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/placeholder.svg' ) );
 $menu = array( '首页' => 'home', '雪茄 Cigars' => 'shop', '产品页示例' => 'product', '常见问题' => 'faq' );
 ?>
 <!doctype html>
@@ -180,7 +197,7 @@ body { margin: 0; }
 
 <section class="pv-view woocommerce" id="view-product">
 	<div class="product pv-product">
-		<img class="aurora-ph" src="placeholder.svg" alt="产品图片">
+		<img class="aurora-ph" src="<?php echo aurora_preview_img( $GLOBALS['product']->d['brand'] ); ?>" alt="产品图片">
 		<div class="summary">
 			<h1 class="product_title"><?php echo esc_html( $GLOBALS['product']->get_name() ); ?></h1>
 			<p class="price"><span class="woocommerce-Price-amount">$1,280</span></p>
@@ -204,8 +221,6 @@ body { margin: 0; }
 <script><?php echo str_replace( '</script', '<\/script', $js ); ?></script>
 <script>
 (function () {
-	var ph = <?php echo json_encode( $svg ); ?>;
-	document.querySelectorAll('img[src="placeholder.svg"]').forEach(function (img) { img.src = ph; });
 	function show() {
 		var id = (location.hash || '#home').slice(1);
 		if (!document.getElementById('view-' + id)) id = 'home';

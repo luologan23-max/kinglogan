@@ -11,6 +11,8 @@
   python3 aurora_setup.py import aurora_products_full.csv --dry-run   # 先预览字段映射
   python3 aurora_setup.py import aurora_products_full.csv             # 正式导入（按 SKU 去重，可重复跑）
   python3 aurora_setup.py pages                       # 创建首页、关于、防伪查验、FAQ、批发、条款页面，并设为首页
+  python3 aurora_setup.py images                      # 给没有图片的产品配品牌图，并设置品牌分类封面
+  python3 aurora_setup.py images --photos ~/实拍图     # 按 SKU 命名的实拍图替换（COH-ROB-25.jpg、COH-ROB-25-2.jpg…）
   python3 aurora_setup.py menu                        # 创建主导航
   python3 aurora_setup.py cleanup                     # 停用 YITH / Click to Chat / PayPal（不在 all 里）
   python3 aurora_setup.py all aurora_products_full.csv
@@ -133,12 +135,12 @@ class WP:
             "User-Agent": "aurora-setup/1.0",
         }
 
-    def req(self, method, path, body=None, params=None):
+    def req(self, method, path, body=None, params=None, raw=None, extra_headers=None):
         url = f"{self.site}/wp-json/{path.lstrip('/')}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        data = json.dumps(body).encode() if body is not None else None
-        r = urllib.request.Request(url, data=data, method=method, headers=self.headers)
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        r = urllib.request.Request(url, data=data, method=method, headers=dict(self.headers, **(extra_headers or {})))
         try:
             with urllib.request.urlopen(r, timeout=120) as resp:
                 raw = resp.read().decode() or "null"
@@ -148,6 +150,17 @@ class WP:
             raise SystemExit(f"✗ {method} {path} → HTTP {e.code}\n{detail}")
         except urllib.error.URLError as e:
             raise SystemExit(f"✗ 连接失败 {url}: {e.reason}")
+
+    def upload(self, file_path, filename, alt):
+        with open(file_path, "rb") as f:
+            raw = f.read()
+        ctype = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+        media, _ = self.req("POST", "wp/v2/media", raw=raw, extra_headers={
+            "Content-Type": ctype,
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        })
+        self.req("POST", f"wp/v2/media/{media['id']}", {"alt_text": alt, "title": alt})
+        return media["id"]
 
     def get_all(self, path, params=None):
         params = dict(params or {}, per_page=100, page=1)
@@ -352,6 +365,99 @@ def cmd_pages(wp, dry_run=False):
         print("✓ 已设为网站首页")
 
 
+IMAGE_DIR = os.path.join(CONTENT_DIR, "images")
+PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def brand_media(wp, dry_run):
+    """上传 content/images 里的品牌图（已上传过的按文件名复用），返回 {slug: media_id}。"""
+    have = {}
+    if not dry_run:
+        for m in wp.get_all("wp/v2/media", {"search": "aurora-brand-", "_fields": "id,slug"}):
+            have[m["slug"]] = m["id"]
+    ids = {}
+    for b in BRANDS + [{"slug": "aurora", "name": "Aurora Cigars"}]:
+        path = os.path.join(IMAGE_DIR, b["slug"] + ".jpg")
+        if not os.path.exists(path):
+            continue
+        key = f"aurora-brand-{b['slug']}"
+        if key in have:
+            ids[b["slug"]] = have[key]
+        elif dry_run:
+            print(f"[dry-run] 上传品牌图 {key}.jpg")
+            ids[b["slug"]] = 0
+        else:
+            ids[b["slug"]] = wp.upload(path, key + ".jpg", f"{b['name']} 雪茄")
+            print(f"✓ 上传品牌图 {key}.jpg")
+    return ids
+
+
+def sku_photos(photo_dir, skus):
+    """实拍图按 SKU 命名：COH-ROB-25.jpg 为主图，COH-ROB-25-2.jpg、-3… 为图集（不区分大小写）。
+    先整名匹配 SKU，再尝试去掉末尾的「-序号」，所以 SKU 本身以数字结尾也不会认错。"""
+    groups, unmatched = {}, []
+    if not photo_dir:
+        return groups, unmatched
+    for name in sorted(os.listdir(photo_dir)):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in PHOTO_EXT:
+            continue
+        key, order = stem.upper(), 1
+        if key not in skus:
+            base, _, num = key.rpartition("-")
+            if base in skus and num.isdigit():
+                key, order = base, int(num)
+            else:
+                unmatched.append(name)
+                continue
+        groups.setdefault(key, []).append((order, os.path.join(photo_dir, name)))
+    return {k: [p for _, p in sorted(v)] for k, v in groups.items()}, unmatched
+
+
+def cmd_images(wp, photo_dir=None, dry_run=False):
+    if photo_dir and not os.path.isdir(photo_dir):
+        raise SystemExit(f"✗ 找不到图片目录：{photo_dir}")
+    brand_ids = brand_media(wp, dry_run)
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,images,categories,meta_data", "status": "any"})
+    photos, unmatched = sku_photos(photo_dir, {(p.get("sku") or "").upper() for p in products if p.get("sku")})
+    if photo_dir:
+        print(f"实拍图目录：匹配 {len(photos)} 个 SKU")
+        for name in unmatched:
+            print(f"! 未匹配任何 SKU，跳过：{name}")
+    if dry_run:
+        for sku, files in photos.items():
+            print(f"[dry-run] {sku} ← {', '.join(os.path.basename(f) for f in files)}")
+        return
+
+    # 品牌分类封面
+    for cat in wp.get_all("wc/v3/products/categories", {"_fields": "id,name,image"}):
+        _, brand = find_brand(cat["name"])
+        if brand and brand["slug"] in brand_ids and not cat.get("image"):
+            wp.req("POST", f"wc/v3/products/categories/{cat['id']}", {"image": {"id": brand_ids[brand["slug"]]}})
+            print(f"✓ 分类封面：{cat['name']}")
+
+    updates, real, fallback = [], 0, 0
+    for p in products:
+        sku = (p.get("sku") or "").upper()
+        if sku in photos:
+            ids = [wp.upload(f, os.path.basename(f), p["name"]) for f in photos[sku]]
+            updates.append({"id": p["id"], "images": [{"id": i} for i in ids]})
+            real += 1
+            continue
+        if p.get("images"):
+            continue  # 已有图片（含之前配的品牌图）不动
+        brand_name = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_brand"), "")
+        brand_name = brand_name or next((c["name"] for c in p.get("categories", [])), "")
+        _, brand = find_brand(brand_name)
+        media = brand_ids.get(brand["slug"] if brand else "aurora") or brand_ids.get("aurora")
+        if media:
+            updates.append({"id": p["id"], "images": [{"id": media}]})
+            fallback += 1
+    for i in range(0, len(updates), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    print(f"✓ 实拍图 {real} 款，品牌图 {fallback} 款")
+
+
 def cmd_menu(wp, dry_run=False):
     if dry_run:
         print("[dry-run] 主导航：" + " / ".join(t for t, _ in MENU))
@@ -380,12 +486,13 @@ def cmd_cleanup(wp, dry_run=False):
 
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
-    ap.add_argument("command", choices=["check", "configure", "import", "pages", "menu", "cleanup", "all"])
+    ap.add_argument("command", choices=["check", "configure", "import", "images", "pages", "menu", "cleanup", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
     ap.add_argument("--dry-run", action="store_true", help="只预览，不写入网站")
     ap.add_argument("--limit", type=int, help="只导入前 N 行（测试用）")
+    ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 命名")
     args = ap.parse_args()
 
     overrides = {}
@@ -411,6 +518,8 @@ def main():
         cmd_configure(wp, args.dry_run)
     if args.command in ("import", "all"):
         cmd_import(wp, args.csv, overrides, args.dry_run, args.limit)
+    if args.command in ("images", "all"):
+        cmd_images(wp, args.photos, args.dry_run)
     if args.command in ("pages", "all"):
         cmd_pages(wp, args.dry_run)
     if args.command in ("menu", "all"):

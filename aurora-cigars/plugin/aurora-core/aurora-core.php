@@ -397,7 +397,7 @@ add_action( 'woocommerce_before_shop_loop', function () {
 }, 5 );
 
 add_filter( 'woocommerce_placeholder_img_src', function () {
-	return AURORA_CORE_URL . 'assets/placeholder.svg';
+	return AURORA_CORE_URL . 'assets/placeholder.jpg';
 } );
 
 /* -------------------------------------------------------------------------

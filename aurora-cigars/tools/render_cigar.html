@@ -1,0 +1,193 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500;6..96,600&family=Jost:wght@400;500&display=swap">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body>
+<canvas id="c"></canvas>
+<script>
+/* Aurora 产品图渲染器：?brand=Cohiba&wrapper=colorado&size=1600&seed=3
+   wrapper: claro | colorado | maduro ；产出 1:1 产品主图 */
+const q = new URLSearchParams(location.search);
+const BRAND = q.get('brand') || 'Aurora';
+const SUB = q.get('sub') || 'HABANA · CUBA';
+const SIZE = +(q.get('size') || 1600);
+const WRAP = { claro: ['#a9774a', '#7a4f2c', '#4a2e18'], colorado: ['#8a5532', '#5e371d', '#33200f'], maduro: ['#5a3620', '#3a2213', '#1c110a'] }[q.get('wrapper') || 'colorado'];
+let seed = +(q.get('seed') || 7);
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+const c = document.getElementById('c');
+c.width = c.height = SIZE;
+const x = c.getContext('2d');
+const S = SIZE / 1000; // 以 1000 为设计尺寸
+
+function grain(alpha) {
+	const img = x.getImageData(0, 0, SIZE, SIZE), d = img.data;
+	for (let i = 0; i < d.length; i += 4) {
+		const n = (rnd() - .5) * 255 * alpha;
+		d[i] += n; d[i + 1] += n; d[i + 2] += n;
+	}
+	x.putImageData(img, 0, 0);
+}
+
+function background() {
+	// 深色皮革/木纹台面 + 顶光
+	const g = x.createRadialGradient(SIZE * .42, SIZE * .32, 10, SIZE * .5, SIZE * .5, SIZE * .85);
+	g.addColorStop(0, '#3a2a1e'); g.addColorStop(.45, '#1d1510'); g.addColorStop(1, '#070504');
+	x.fillStyle = g; x.fillRect(0, 0, SIZE, SIZE);
+	// 细木纹
+	x.save(); x.globalAlpha = .05;
+	for (let i = 0; i < 140; i++) {
+		const y = rnd() * SIZE;
+		x.strokeStyle = rnd() > .5 ? '#c9a27a' : '#000';
+		x.lineWidth = (.5 + rnd() * 2) * S;
+		x.beginPath(); x.moveTo(0, y);
+		x.bezierCurveTo(SIZE * .3, y + (rnd() - .5) * 40 * S, SIZE * .7, y + (rnd() - .5) * 40 * S, SIZE, y + (rnd() - .5) * 30 * S);
+		x.stroke();
+	}
+	x.restore();
+}
+
+function cigar() {
+	const L = 760 * S, R = 46 * S; // 长度、半径（环径约 52 的比例感）
+	x.save();
+	x.translate(SIZE * .5, SIZE * .52);
+	x.rotate(+(q.get('angle') || -0.42));
+	x.translate(-L / 2, 0);
+
+	// 投影
+	x.save();
+	x.translate(18 * S, 46 * S);
+	x.filter = `blur(${22 * S}px)`;
+	x.fillStyle = 'rgba(0,0,0,.75)';
+	x.beginPath(); x.roundRect(0, -R * .7, L, R * 1.4, R); x.fill();
+	x.restore();
+
+	// 主体轮廓：左端为切口（foot），右端为圆顶（cap）
+	const body = new Path2D();
+	body.moveTo(0, -R);
+	body.lineTo(L - R * 1.3, -R);
+	body.bezierCurveTo(L - R * .2, -R, L, -R * .45, L, 0);
+	body.bezierCurveTo(L, R * .45, L - R * .2, R, L - R * 1.3, R);
+	body.lineTo(0, R);
+	body.closePath();
+
+	x.save();
+	x.clip(body);
+	// 圆柱明暗
+	const cyl = x.createLinearGradient(0, -R, 0, R);
+	cyl.addColorStop(0, WRAP[2]); cyl.addColorStop(.18, WRAP[0]); cyl.addColorStop(.34, WRAP[0]);
+	cyl.addColorStop(.62, WRAP[1]); cyl.addColorStop(1, WRAP[2]);
+	x.fillStyle = cyl; x.fillRect(0, -R, L, R * 2);
+	// 茄衣色斑（烟叶天然深浅不一）
+	for (let i = 0; i < 26; i++) {
+		const gx = rnd() * L, gy = (rnd() - .5) * R * 1.6, gr = (30 + rnd() * 90) * S;
+		const blot = x.createRadialGradient(gx, gy, 0, gx, gy, gr);
+		blot.addColorStop(0, rnd() > .5 ? 'rgba(20,8,2,.16)' : 'rgba(255,210,160,.08)');
+		blot.addColorStop(1, 'rgba(0,0,0,0)');
+		x.fillStyle = blot; x.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+	}
+	// 茄衣叶脉与螺旋卷痕
+	for (let i = 0; i < 70; i++) {
+		const sx = rnd() * L, sy = (rnd() - .5) * 2 * R;
+		x.strokeStyle = `rgba(${rnd() > .5 ? '255,220,180' : '20,10,5'},${.05 + rnd() * .09})`;
+		x.lineWidth = (.6 + rnd() * 1.6) * S;
+		x.beginPath(); x.moveTo(sx, sy);
+		x.quadraticCurveTo(sx + 40 * S, sy + (rnd() - .5) * 20 * S, sx + (60 + rnd() * 140) * S, sy + (rnd() - .5) * 30 * S);
+		x.stroke();
+	}
+	x.strokeStyle = 'rgba(0,0,0,.12)'; x.lineWidth = 1.1 * S;
+	for (let sx = -R; sx < L; sx += (70 + rnd() * 40) * S) {
+		x.beginPath(); x.moveTo(sx, -R); x.quadraticCurveTo(sx + R * .9, 0, sx + R * 1.7, R); x.stroke();
+	}
+	// 高光条
+	const hl = x.createLinearGradient(0, -R, 0, R);
+	hl.addColorStop(0, 'rgba(255,235,210,0)'); hl.addColorStop(.2, 'rgba(255,235,210,.12)'); hl.addColorStop(.25, 'rgba(255,235,210,.34)'); hl.addColorStop(.31, 'rgba(255,235,210,0)');
+	x.fillStyle = hl; x.fillRect(0, -R, L, R * 2);
+	x.restore();
+
+	// 切口端：可见烟叶填充
+	x.save();
+	x.beginPath(); x.ellipse(0, 0, R * .32, R, 0, 0, Math.PI * 2); x.clip();
+	const foot = x.createRadialGradient(0, 0, 2, 0, 0, R);
+	foot.addColorStop(0, '#6b4628'); foot.addColorStop(1, '#2c1a0d');
+	x.fillStyle = foot; x.fillRect(-R, -R, R * 2, R * 2);
+	for (let i = 0; i < 90; i++) {
+		x.strokeStyle = `rgba(${150 + rnd() * 80},${90 + rnd() * 50},${40 + rnd() * 30},.5)`;
+		x.lineWidth = (.5 + rnd()) * S;
+		const a = rnd() * Math.PI * 2, r1 = rnd() * R;
+		x.beginPath(); x.moveTo(Math.cos(a) * r1 * .32, Math.sin(a) * r1);
+		x.lineTo(Math.cos(a + .6) * (r1 * .8) * .32, Math.sin(a + .6) * r1 * .8); x.stroke();
+	}
+	x.restore();
+	x.strokeStyle = 'rgba(0,0,0,.5)'; x.lineWidth = 1.5 * S;
+	x.beginPath(); x.ellipse(0, 0, R * .32, R, 0, 0, Math.PI * 2); x.stroke();
+
+	// 环标：金箔 + 品牌名
+	const bx = L * .62, bw = 150 * S, bh = R * 2.06;
+	x.save();
+	x.beginPath(); x.roundRect(bx, -bh / 2, bw, bh, 3 * S); x.clip();
+	const gold = x.createLinearGradient(0, -bh / 2, 0, bh / 2);
+	gold.addColorStop(0, '#5c4320'); gold.addColorStop(.16, '#e9cf8f'); gold.addColorStop(.3, '#fff2c9');
+	gold.addColorStop(.44, '#c9a25a'); gold.addColorStop(.7, '#8a6a33'); gold.addColorStop(1, '#3d2c14');
+	x.fillStyle = gold; x.fillRect(bx, -bh / 2, bw, bh);
+	// 压纹边线
+	x.strokeStyle = 'rgba(60,40,15,.65)'; x.lineWidth = 1.6 * S;
+	[9 * S, bw - 9 * S].forEach((o) => { x.beginPath(); x.moveTo(bx + o, -bh / 2); x.lineTo(bx + o, bh / 2); x.stroke(); });
+	x.strokeStyle = 'rgba(255,240,200,.35)'; x.lineWidth = 1 * S;
+	[12 * S, bw - 12 * S].forEach((o) => { x.beginPath(); x.moveTo(bx + o, -bh / 2); x.lineTo(bx + o, bh / 2); x.stroke(); });
+	// 中央深色标签 + 品牌名
+	const lw = bw * .76, lh = bh * .46;
+	x.fillStyle = 'rgba(14,10,6,.92)';
+	x.beginPath(); x.roundRect(bx + (bw - lw) / 2, -lh / 2, lw, lh, 2 * S); x.fill();
+	x.save();
+	x.translate(bx + bw / 2, 0);
+	x.fillStyle = '#e6c983';
+	// 长品牌名自动分两行（在最接近中间的空格处断开）
+	const label = BRAND.toUpperCase();
+	let lines = [label];
+	if (label.length > 11 && label.includes(' ')) {
+		const mid = label.length / 2;
+		let best = -1;
+		for (let i = 0; i < label.length; i++) if (label[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+		lines = [label.slice(0, best), label.slice(best + 1)];
+	}
+	let fs = 20 * S;
+	const setFont = () => { x.font = `600 ${fs}px "Bodoni Moda", Didot, serif`; };
+	setFont();
+	const widest = () => Math.max(...lines.map((l) => x.measureText(l).width));
+	while ((widest() > lw * .86 || fs * lines.length * 1.15 > lh * .9) && fs > 8 * S) { fs -= S; setFont(); }
+	x.textAlign = 'center'; x.textBaseline = 'middle';
+	lines.forEach((l, i) => x.fillText(l, 0, (i - (lines.length - 1) / 2) * fs * 1.12 + S));
+	x.restore();
+	x.restore();
+
+	x.restore();
+}
+
+function caption() {
+	x.textAlign = 'center';
+	x.fillStyle = 'rgba(214,183,124,.92)';
+	x.font = `500 ${46 * S}px "Bodoni Moda", Didot, serif`;
+	x.fillText(BRAND, SIZE / 2, SIZE * .86);
+	x.fillStyle = 'rgba(214,183,124,.55)';
+	x.font = `400 ${15 * S}px Jost, "Helvetica Neue", sans-serif`;
+	const sub = SUB.split('').join(String.fromCharCode(8202));
+	x.fillText(sub, SIZE / 2, SIZE * .9);
+	// 细框
+	x.strokeStyle = 'rgba(214,183,124,.28)'; x.lineWidth = 1.2 * S;
+	x.strokeRect(34 * S, 34 * S, SIZE - 68 * S, SIZE - 68 * S);
+}
+
+document.fonts.load(`600 40px "Bodoni Moda"`).then(() => document.fonts.load('400 20px Jost')).catch(() => {}).finally(() => {
+	background();
+	grain(.05);
+	cigar();
+	// 顶光暗角
+	const v = x.createRadialGradient(SIZE * .45, SIZE * .38, SIZE * .2, SIZE * .5, SIZE * .5, SIZE * .78);
+	v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
+	x.fillStyle = v; x.fillRect(0, 0, SIZE, SIZE);
+	caption();
+	document.title = 'ready';
+});
+</script>
+</body></html>
