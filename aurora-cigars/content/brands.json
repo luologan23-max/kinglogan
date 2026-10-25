@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Cohiba",
+    "name_cn": "高希霸",
+    "slug": "cohiba",
+    "description": "高希霸诞生于 1966 年，最初只供古巴国礼使用，1982 年才对外发售，如今是古巴雪茄的旗舰品牌。烟叶精选自比那尔德里奥省 Vuelta Abajo 产区的顶级种植园，部分烟叶还会经过额外一道发酵，所以口感格外圆润细腻。\n\nBorn in 1966 as Cuba's diplomatic gift and released to the public in 1982, Cohiba is the flagship of Habanos — leaves from the finest Vuelta Abajo vegas, with an extra fermentation for its signature smoothness."
+  },
+  {
+    "name": "Montecristo",
+    "name_cn": "蒙特克里斯托",
+    "slug": "montecristo",
+    "description": "蒙特克里斯托创立于 1935 年，品牌名取自《基督山伯爵》。当年卷烟工人最爱听人朗读这本小说。它的 No.4 是全球销量最高的古巴雪茄之一，中等浓度，带有木香和可可的风味，口感均衡。\n\nFounded in 1935 and named after The Count of Monte Cristo, the novel favoured by the factory's lectores. Its No.4 is among the world's best-selling Habanos — medium-bodied, balanced, with notes of wood and cocoa."
+  },
+  {
+    "name": "Romeo y Julieta",
+    "name_cn": "罗密欧与朱丽叶",
+    "slug": "romeo-y-julieta",
+    "description": "罗密欧与朱丽叶创立于 1875 年，以莎士比亚的爱情名作命名。丘吉尔对这个品牌情有独钟，Churchill 这个尺寸就是因他得名。整体风味优雅、带花香，适合各个阶段的雪茄客。\n\nEstablished in 1875 and named after Shakespeare's lovers. Winston Churchill's devotion to the brand gave the Churchill size its name. Elegant, floral and approachable."
+  },
+  {
+    "name": "Partagás",
+    "name_cn": "帕特加斯",
+    "slug": "partagas",
+    "description": "帕特加斯由 Don Jaime Partagás 于 1845 年在哈瓦那创立，是历史最悠久的古巴品牌之一。风味浓郁饱满，带有泥土和香料的气息，Serie D No.4 是 Robusto 尺寸的标杆之作。\n\nFounded in Havana in 1845 by Don Jaime Partagás. Full-bodied, earthy and spicy — the Serie D No.4 remains the benchmark Robusto."
+  },
+  {
+    "name": "H. Upmann",
+    "name_cn": "乌普曼",
+    "slug": "h-upmann",
+    "description": "乌普曼由德国银行家 Herman Upmann 于 1844 年创立。传说他最早是把雪茄当作送给贵宾的礼物。整体风味细腻柔和，中等偏淡，Magnum 系列很受欢迎。\n\nCreated in 1844 by the German banker Herman Upmann, whose cigars began as gifts for valued clients. Refined, smooth and medium-light — the Magnum line is a favourite."
+  },
+  {
+    "name": "Trinidad",
+    "name_cn": "特立尼达",
+    "slug": "trinidad",
+    "description": "特立尼达诞生于 1969 年，曾和高希霸一样只作国礼使用，1998 年才正式上市。招牌是独特的小辫子烟帽，风味优雅而有层次，产量稀少。\n\nBorn in 1969 as a diplomatic gift alongside Cohiba and launched publicly in 1998. Recognisable by its pigtail cap — elegant, complex and produced in limited numbers."
+  },
+  {
+    "name": "Hoyo de Monterrey",
+    "name_cn": "好友",
+    "slug": "hoyo-de-monterrey",
+    "description": "好友创立于 1865 年，品牌名来自 San Juan y Martínez 地区一处著名的种植园。风味轻柔、带奶油感，Epicure 系列是入门古巴雪茄的经典选择。\n\nFounded in 1865 and named after a celebrated plantation in San Juan y Martínez. Light, creamy and aromatic — the Epicure line is a classic introduction to Habanos."
+  },
+  {
+    "name": "Bolívar",
+    "name_cn": "玻利瓦尔",
+    "slug": "bolivar",
+    "description": "玻利瓦尔创立于 1902 年，以南美解放者西蒙·玻利瓦尔命名，是古巴雪茄里有名的「重口味」，浓郁有力，适合资深雪茄客。\n\nEstablished in 1902 and named after Simón Bolívar. One of the most full-bodied Habanos — rich and powerful, for the seasoned smoker."
+  },
+  {
+    "name": "Punch",
+    "name_cn": "潘趣",
+    "slug": "punch",
+    "description": "潘趣创立于 1840 年，是至今仍在生产的最古老的古巴品牌之一，名字取自英国讽刺杂志《Punch》。风味中等偏浓，耐储存，越陈越好。\n\nFounded in 1840 — one of the oldest Habanos brands still in production, named after the British magazine Punch. Medium-full and famously rewarding with age."
+  },
+  {
+    "name": "Davidoff",
+    "name_cn": "大卫杜夫",
+    "slug": "davidoff",
+    "description": "大卫杜夫由 Zino Davidoff 创立。自 1990 年起在多米尼加生产，是非古巴精品雪茄的代表品牌。做工精湛，风味细腻稳定，Millennium、Signature 等系列都很受欢迎。\n\nFounded by Zino Davidoff and crafted in the Dominican Republic since 1990 — the benchmark of premium non-Cuban cigars, known for impeccable construction and consistency."
+  }
+]

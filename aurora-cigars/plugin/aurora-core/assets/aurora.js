@@ -181,7 +181,14 @@
 		drawer.querySelector('.aurora-send-list').addEventListener('click', function () {
 			var list = loadList();
 			if (!list.length) return;
-			window.open(waLink(listMessage(list)), '_blank', 'noopener');
+			var url = waLink(listMessage(list));
+			// 部分手机浏览器会拦截弹窗，拦截时改为当前页跳转
+			var win = window.open(url, '_blank');
+			if (win) {
+				win.opener = null;
+			} else {
+				window.location.href = url;
+			}
 		});
 		drawer.querySelector('.aurora-clear-list').addEventListener('click', function () {
 			saveList([]);

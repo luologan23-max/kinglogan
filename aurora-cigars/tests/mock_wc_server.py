@@ -8,7 +8,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AUTH = "Basic " + base64.b64encode(b"tester:abcd efgh ijkl").decode()
-state = {"products": [], "cats": [], "pages": [], "settings": {}, "next": 100}
+state = {"products": [], "cats": [], "pages": [], "settings": {}, "menus": [], "menu_items": [], "next": 100,
+         "plugins": [{"plugin": "yith-woocommerce-wishlist/init", "name": "YITH Wishlist", "status": "active"},
+                     {"plugin": "elementor/elementor", "name": "Elementor", "status": "active"}]}
 
 
 def new_id():
@@ -52,6 +54,28 @@ class H(BaseHTTPRequestHandler):
             c = dict(body, id=new_id())
             state["cats"].append(c)
             return self.send(201, c)
+        if p.startswith("wc/v3/products/categories/"):
+            cid = int(p.rsplit("/", 1)[1])
+            for c in state["cats"]:
+                if c["id"] == cid:
+                    c.update(body)
+                    return self.send(200, c)
+        if p == "wp/v2/menus":
+            if method == "GET":
+                return self.send(200, state["menus"])
+            mnu = dict(body, id=new_id())
+            state["menus"].append(mnu)
+            return self.send(201, mnu)
+        if p == "wp/v2/menu-items":
+            state["menu_items"].append(body)
+            return self.send(201, dict(body, id=new_id()))
+        if p == "wp/v2/plugins":
+            return self.send(200, state["plugins"])
+        if p.startswith("wp/v2/plugins/"):
+            for pl in state["plugins"]:
+                if pl["plugin"] == p[len("wp/v2/plugins/"):]:
+                    pl.update(body)
+                    return self.send(200, pl)
         if p == "wc/v3/products":
             page, per = int(q.get("page", 1)), int(q.get("per_page", 10))
             return self.send(200, state["products"][(page - 1) * per: page * per], max(1, -(-len(state["products"]) // per)))

@@ -10,7 +10,9 @@
   python3 aurora_setup.py configure                   # WooCommerce 设置：USD / 迪拜 / 关闭配送
   python3 aurora_setup.py import aurora_products_full.csv --dry-run   # 先预览字段映射
   python3 aurora_setup.py import aurora_products_full.csv             # 正式导入（按 SKU 去重，可重复跑）
-  python3 aurora_setup.py pages                       # 创建首页 / 批发合作 / 配送说明，并设为首页
+  python3 aurora_setup.py pages                       # 创建首页、关于、防伪查验、FAQ、批发、条款页面，并设为首页
+  python3 aurora_setup.py menu                        # 创建主导航
+  python3 aurora_setup.py cleanup                     # 停用 YITH / Click to Chat / PayPal（不在 all 里）
   python3 aurora_setup.py all aurora_products_full.csv
 """
 
@@ -21,6 +23,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -51,10 +54,35 @@ FIELD_ALIASES = {
 META_FIELDS = ["brand", "name_en", "vitola", "length", "ring", "box_count",
                "strength", "wrapper", "origin", "limited", "verify"]
 
-# 首页品牌宫格的顺序（排在前 6 位的就是首屏旗舰品牌）
-FLAGSHIP_BRANDS = ["Cohiba", "Montecristo", "Romeo y Julieta", "Partagás",
-                   "H. Upmann", "Trinidad", "Hoyo de Monterrey", "Bolívar",
-                   "Punch", "Davidoff"]
+CONTENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "content")
+
+# 品牌介绍；文件中的顺序就是首页品牌宫格的顺序（前 6 个是首屏旗舰品牌）
+with open(os.path.join(CONTENT_DIR, "brands.json"), encoding="utf-8") as _f:
+    BRANDS = json.load(_f)
+
+# (slug, 标题, 内容文件)
+PAGES = [
+    ("home", "首页", "home.html"),
+    ("about", "关于我们", "about.html"),
+    ("verify", "防伪查验", "verify.html"),
+    ("faq", "常见问题", "faq.html"),
+    ("wholesale", "批发合作", "wholesale.html"),
+    ("shipping", "配送与条款", "shipping.html"),
+]
+
+# 主导航：(标题, 路径)
+MENU = [
+    ("雪茄 Cigars", "/shop/"),
+    ("品牌 Houses", "/#brands"),
+    ("防伪查验", "/verify/"),
+    ("批发合作", "/wholesale/"),
+    ("关于我们", "/about/"),
+    ("常见问题", "/faq/"),
+]
+
+# cleanup 命令会停用的插件（功能已由 aurora-core 提供，或询价模式用不到）
+REDUNDANT_PLUGINS = ["yith-woocommerce-wishlist", "click-to-chat-for-whatsapp",
+                     "woocommerce-paypal-payments"]
 
 WC_SETTINGS = {
     "general": {
@@ -78,6 +106,20 @@ WC_SETTINGS = {
 
 def norm(s):
     return re.sub(r"[\s_\-/()（）]+", "", str(s)).lower()
+
+
+def brand_key(s):
+    """品牌比对用：去掉重音、标点和大小写，Partagás = partagas = PARTAGAS。"""
+    s = unicodedata.normalize("NFKD", str(s))
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", "".join(c for c in s if not unicodedata.combining(c)).lower())
+
+
+def find_brand(name):
+    key = brand_key(name)
+    for i, b in enumerate(BRANDS):
+        if key in (brand_key(b["name"]), brand_key(b["name_cn"]), brand_key(b["slug"])):
+            return i, b
+    return None, None
 
 
 class WP:
@@ -211,20 +253,30 @@ def to_product(row, mapping, cat_ids):
 
 
 def ensure_categories(wp, names, dry_run):
-    existing = {c["name"]: c["id"] for c in wp.get_all("wc/v3/products/categories", {"_fields": "id,name"})} if not dry_run else {}
-    order = {b.lower(): i for i, b in enumerate(FLAGSHIP_BRANDS)}
+    """按名称建分类；能对上 brands.json 的品牌，会顺带写入介绍和排序。"""
+    cats = wp.get_all("wc/v3/products/categories", {"_fields": "id,name,description"}) if not dry_run else []
+    existing = {c["name"]: c for c in cats}
+    ids = {}
     for name in sorted(names):
-        if name in existing:
+        order, brand = find_brand(name)
+        info = {"menu_order": 100 if order is None else order}
+        if brand:
+            info["description"] = brand["description"]
+        cat = existing.get(name)
+        if cat:
+            ids[name] = cat["id"]
+            if brand and not cat.get("description") and not dry_run:
+                wp.req("POST", f"wc/v3/products/categories/{cat['id']}", info)
+                print(f"✓ 补充品牌介绍：{name}")
             continue
-        body = {"name": name, "menu_order": order.get(name.lower(), 100)}
         if dry_run:
-            print(f"[dry-run] 新建分类：{name}")
-            existing[name] = 0
+            print(f"[dry-run] 新建分类：{name}" + ("（含品牌介绍）" if brand else ""))
+            ids[name] = 0
             continue
-        res, _ = wp.req("POST", "wc/v3/products/categories", body)
-        existing[name] = res["id"]
-        print(f"✓ 新建分类：{name}")
-    return existing
+        res, _ = wp.req("POST", "wc/v3/products/categories", dict(info, name=name))
+        ids[name] = res["id"]
+        print(f"✓ 新建分类：{name}" + ("（含品牌介绍）" if brand else ""))
+    return ids
 
 
 def cmd_import(wp, csv_path, overrides, dry_run=False, limit=None):
@@ -277,62 +329,11 @@ def cmd_import(wp, csv_path, overrides, dry_run=False, limit=None):
     print(f"✓ 导入完成，失败 {errors} 条")
 
 
-HOME_HTML = """<!-- wp:html -->
-<section class="aurora-hero">
-  <p class="aurora-hero__eyebrow">Aurora Cigars · Dubai</p>
-  <h1>古巴雪茄，迪拜直供</h1>
-  <p>中东授权经销商直供。每一盒都可查防伪，DHL Express 直送到您手中。</p>
-  <p>[aurora_whatsapp text="WhatsApp 询价" message="您好，我想了解在售的雪茄。"] &nbsp; <a class="aurora-btn aurora-btn--ghost" href="/shop/">浏览全部雪茄</a></p>
-</section>
-<section class="aurora-section">
-  <h2 class="aurora-section__title">旗舰品牌 · The Houses</h2>
-  [aurora_brands limit="6"]
-</section>
-<section class="aurora-section">
-  <div class="aurora-pillars">
-    <div><h3>授权直供</h3><p>中东授权经销商渠道，来源清晰可追溯。</p></div>
-    <div><h3>防伪可查</h3><p>每盒附原厂防伪标，收货后可自行查验。</p></div>
-    <div><h3>全球直发</h3><p>DHL Express，15–20 个工作日送达。</p></div>
-  </div>
-</section>
-<section class="aurora-band">
-  <div class="aurora-section">
-    <h2 class="aurora-section__title">批发与长期合作</h2>
-    <p>雪茄吧、会所与私人藏家，欢迎洽谈批量价格与专属配额。</p>
-    <p>[aurora_whatsapp text="洽谈合作" message="您好，我想咨询批发合作。"]</p>
-  </div>
-</section>
-<section class="aurora-section">[aurora_shipping]</section>
-<!-- /wp:html -->"""
-
-WHOLESALE_HTML = """<!-- wp:html -->
-<section class="aurora-section">
-  <h1 class="aurora-section__title">批发合作 · Wholesale</h1>
-  <p>Aurora Global Tobacco Trading FZCO 位于迪拜杰贝阿里自贸区（JAFZA），为雪茄吧、会所与藏家提供古巴及非古精品雪茄。</p>
-  <p>请通过 WhatsApp 告诉我们您的需求（品牌、数量、目的地），我们会在 24 小时内回复报价与库存。</p>
-  <p>[aurora_whatsapp text="WhatsApp 洽谈" message="您好，我想咨询批发合作。"]</p>
-</section>
-<!-- /wp:html -->"""
-
-SHIPPING_HTML = """<!-- wp:html -->
-<section class="aurora-section">
-  <h1 class="aurora-section__title">配送与条款 · Shipping</h1>
-  [aurora_shipping]
-  <p>所有订单通过 WhatsApp 确认，付款方式与发货时间以确认消息为准。</p>
-  <p>本网站仅面向年满 21 岁的成年人。</p>
-</section>
-<!-- /wp:html -->"""
-
-PAGES = [
-    ("home", "首页", HOME_HTML),
-    ("wholesale", "批发合作", WHOLESALE_HTML),
-    ("shipping", "配送与条款", SHIPPING_HTML),
-]
-
-
 def cmd_pages(wp, dry_run=False):
     ids = {}
-    for slug, title, html in PAGES:
+    for slug, title, filename in PAGES:
+        with open(os.path.join(CONTENT_DIR, "pages", filename), encoding="utf-8") as f:
+            html = f.read()
         if dry_run:
             print(f"[dry-run] 页面 /{slug}/ {title}")
             continue
@@ -351,9 +352,35 @@ def cmd_pages(wp, dry_run=False):
         print("✓ 已设为网站首页")
 
 
+def cmd_menu(wp, dry_run=False):
+    if dry_run:
+        print("[dry-run] 主导航：" + " / ".join(t for t, _ in MENU))
+        return
+    menus, _ = wp.req("GET", "wp/v2/menus", params={"_fields": "id,name"})
+    if any(m["name"] == "Aurora 主导航" for m in menus):
+        print("· 主导航已存在，跳过（要重建请先在后台删除「Aurora 主导航」）")
+        return
+    menu, _ = wp.req("POST", "wp/v2/menus", {"name": "Aurora 主导航", "locations": ["primary"]})
+    for i, (title, path) in enumerate(MENU, 1):
+        wp.req("POST", "wp/v2/menu-items", {"title": title, "url": wp.site + path, "menus": menu["id"],
+                                            "type": "custom", "status": "publish", "menu_order": i})
+    print(f"✓ 已创建主导航（{len(MENU)} 项）并设为 primary 位置")
+
+
+def cmd_cleanup(wp, dry_run=False):
+    plugins, _ = wp.req("GET", "wp/v2/plugins", params={"_fields": "plugin,name,status"})
+    for p in plugins:
+        if p["plugin"].split("/")[0] in REDUNDANT_PLUGINS and p["status"] == "active":
+            if dry_run:
+                print(f"[dry-run] 将停用：{p['name']}")
+                continue
+            wp.req("POST", f"wp/v2/plugins/{p['plugin']}", {"status": "inactive"})
+            print(f"✓ 已停用：{p['name']}（可随时在后台重新启用）")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
-    ap.add_argument("command", choices=["check", "configure", "import", "pages", "all"])
+    ap.add_argument("command", choices=["check", "configure", "import", "pages", "menu", "cleanup", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -386,6 +413,10 @@ def main():
         cmd_import(wp, args.csv, overrides, args.dry_run, args.limit)
     if args.command in ("pages", "all"):
         cmd_pages(wp, args.dry_run)
+    if args.command in ("menu", "all"):
+        cmd_menu(wp, args.dry_run)
+    if args.command == "cleanup":
+        cmd_cleanup(wp, args.dry_run)
 
 
 if __name__ == "__main__":

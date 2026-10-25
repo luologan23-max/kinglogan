@@ -373,8 +373,104 @@ add_action( 'wp_footer', function () {
 } );
 
 /* -------------------------------------------------------------------------
+ * 商店列表：卡片显示品牌与规格；顶部品牌导航；无图时用品牌占位图
+ * ---------------------------------------------------------------------- */
+
+add_action( 'woocommerce_shop_loop_item_title', function () {
+	global $product;
+	$brand = aurora_brand( $product );
+	if ( $brand ) {
+		printf( '<p class="aurora-brand aurora-brand--loop">%s</p>', esc_html( $brand ) );
+	}
+}, 5 );
+
+add_action( 'woocommerce_after_shop_loop_item_title', function () {
+	global $product;
+	$spec = aurora_spec_line( $product );
+	if ( $spec ) {
+		printf( '<p class="aurora-spec-line aurora-spec-line--loop">%s</p>', esc_html( $spec ) );
+	}
+}, 5 );
+
+add_action( 'woocommerce_before_shop_loop', function () {
+	echo do_shortcode( '[aurora_brand_nav]' );
+}, 5 );
+
+add_filter( 'woocommerce_placeholder_img_src', function () {
+	return AURORA_CORE_URL . 'assets/placeholder.svg';
+} );
+
+/* -------------------------------------------------------------------------
+ * 页脚：公司信息、联系方式、年龄与发货限制（Astra 页脚之前输出）
+ * ---------------------------------------------------------------------- */
+
+function aurora_footer_html() {
+	$wa = aurora_opt( 'whatsapp' );
+	return sprintf(
+		'<footer class="aurora-footer"><div class="aurora-footer__inner">
+			<div><p class="aurora-footer__mark">AURORA</p><p>Aurora Global Tobacco Trading FZCO<br>Jebel Ali Free Zone (JAFZA), Dubai, UAE</p></div>
+			<div><p class="aurora-footer__head">联系 Contact</p><p><a href="%1$s" target="_blank" rel="noopener">WhatsApp +%2$s</a><br><a href="mailto:%3$s">%3$s</a></p></div>
+			<div><p class="aurora-footer__head">服务 Service</p><p><a href="/verify/">防伪查验</a> · <a href="/faq/">常见问题</a><br><a href="/shipping/">配送与条款</a> · <a href="/wholesale/">批发合作</a></p></div>
+		</div>
+		<p class="aurora-footer__legal">仅向年满 %4$d 岁的成年人销售 · Sold only to adults aged %4$d+ · 暂不发货：%5$s<br>© %6$s Aurora Global Tobacco Trading FZCO</p></footer>',
+		esc_url( aurora_wa_link() ),
+		esc_html( $wa ),
+		esc_html( aurora_opt( 'email' ) ),
+		absint( aurora_opt( 'min_age' ) ),
+		esc_html( aurora_opt( 'no_ship' ) ),
+		esc_html( gmdate( 'Y' ) )
+	);
+}
+
+add_action( 'astra_footer_before', function () {
+	echo aurora_footer_html(); // phpcs:ignore WordPress.Security.EscapeOutput
+} );
+
+/* -------------------------------------------------------------------------
  * 短代码：首页与 Elementor 中使用
  * ---------------------------------------------------------------------- */
+
+// [aurora_footer] 不用 Astra 时可手动放置页脚
+add_shortcode( 'aurora_footer', 'aurora_footer_html' );
+
+// [aurora_brand_nav] 商店顶部品牌筛选条
+add_shortcode( 'aurora_brand_nav', function () {
+	$terms = get_terms( array(
+		'taxonomy'   => 'product_cat',
+		'parent'     => 0,
+		'hide_empty' => true,
+		'orderby'    => 'menu_order',
+		'exclude'    => array( (int) get_option( 'default_product_cat' ) ),
+	) );
+	if ( empty( $terms ) || is_wp_error( $terms ) ) {
+		return '';
+	}
+	$current = function_exists( 'is_product_category' ) && is_product_category() ? get_queried_object_id() : 0;
+	$out     = sprintf(
+		'<nav class="aurora-brand-nav" aria-label="品牌"><a href="%s"%s>全部 All</a>',
+		esc_url( wc_get_page_permalink( 'shop' ) ),
+		$current ? '' : ' aria-current="page"'
+	);
+	foreach ( $terms as $term ) {
+		$out .= sprintf(
+			'<a href="%s"%s>%s</a>',
+			esc_url( get_term_link( $term ) ),
+			$current === $term->term_id ? ' aria-current="page"' : '',
+			esc_html( $term->name )
+		);
+	}
+	return $out . '</nav>';
+} );
+
+// [aurora_products limit="8" brand="cohiba"] 精选产品（brand 为分类别名）
+add_shortcode( 'aurora_products', function ( $atts ) {
+	$atts = shortcode_atts( array( 'limit' => 8, 'brand' => '' ), $atts );
+	$sc   = sprintf( '[products limit="%d" columns="4" orderby="menu_order"', absint( $atts['limit'] ) );
+	if ( $atts['brand'] ) {
+		$sc .= sprintf( ' category="%s"', esc_attr( $atts['brand'] ) );
+	}
+	return do_shortcode( $sc . ']' );
+} );
 
 // [aurora_brands limit="6"] 品牌宫格：取顶级产品分类，按 menu_order 排
 add_shortcode( 'aurora_brands', function ( $atts ) {

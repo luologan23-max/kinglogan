@@ -183,6 +183,85 @@ a { color: var(--au-gold-deep); }
 .woocommerce ul.products li.product .price { color: var(--au-black); font-size: 18px; }
 .woocommerce ul.products li.product .aurora-btn { margin-top: .6em; min-height: 42px; font-size: 12px; }
 .woocommerce span.onsale { display: none; }
+.aurora-brand--loop { margin: .9em 0 .2em; font-size: 11px; }
+.aurora-spec-line--loop { margin: .2em 0 .4em; font-size: 14px; }
+
+.aurora-brand-nav {
+	display: flex;
+	gap: 8px;
+	overflow-x: auto;
+	margin: 0 0 28px;
+	padding-bottom: 4px;
+	scrollbar-width: none;
+}
+.aurora-brand-nav a {
+	flex: none;
+	padding: .5em 1.1em;
+	border: 1px solid var(--au-line);
+	font-family: var(--au-sans);
+	font-size: 13px;
+	letter-spacing: .06em;
+	color: var(--au-ink);
+	text-decoration: none;
+	background: #fff;
+}
+.aurora-brand-nav a[aria-current="page"], .aurora-brand-nav a:hover {
+	border-color: var(--au-black);
+	background: var(--au-black);
+	color: #fff;
+}
+
+/* ---------- 页脚 ---------- */
+.aurora-footer { background: var(--au-black); color: #bfb6a6; font-size: 15px; }
+.aurora-footer__inner {
+	display: grid;
+	grid-template-columns: 1.4fr 1fr 1fr;
+	gap: 32px;
+	max-width: 1120px;
+	margin: 0 auto;
+	padding: 64px 16px 32px;
+}
+.aurora-footer p { margin: 0 0 .6em; }
+.aurora-footer a { color: #e8e1d4; text-decoration: none; }
+.aurora-footer a:hover { color: var(--au-gold); }
+.aurora-footer__mark { font-family: var(--au-serif-display); font-size: 22px; letter-spacing: .4em; color: var(--au-gold); }
+.aurora-footer__head { font-family: var(--au-sans); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: #8e8679; }
+.aurora-footer__legal {
+	max-width: 1120px;
+	margin: 0 auto;
+	padding: 20px 16px 32px;
+	border-top: 1px solid #2c2925;
+	font-family: var(--au-sans);
+	font-size: 12px;
+	color: #8e8679;
+}
+
+/* ---------- 内容页 ---------- */
+.aurora-prose { max-width: 760px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) 16px; }
+.aurora-prose h1 { text-align: center; font-size: clamp(30px, 5vw, 44px); margin: 0 0 .2em; }
+.aurora-prose .aurora-prose__en { text-align: center; font-style: italic; color: var(--au-muted); margin: 0 0 2.4em; }
+.aurora-prose h2 { font-size: 24px; margin: 2em 0 .5em; }
+.aurora-prose details { border-bottom: 1px solid var(--au-line); padding: 1em 0; }
+.aurora-prose summary { cursor: pointer; font-family: var(--au-serif-display); font-size: 19px; color: var(--au-black); }
+.aurora-prose details p { margin: .8em 0 0; color: var(--au-ink); }
+.aurora-steps { counter-reset: step; list-style: none; padding: 0; }
+.aurora-steps li { counter-increment: step; position: relative; padding: 0 0 1.2em 3em; }
+.aurora-steps li::before {
+	content: counter(step);
+	position: absolute;
+	left: 0;
+	top: .1em;
+	width: 2em;
+	height: 2em;
+	border: 1px solid var(--au-gold);
+	border-radius: 50%;
+	text-align: center;
+	line-height: 2em;
+	font-family: var(--au-sans);
+	font-size: 13px;
+	color: var(--au-gold-deep);
+}
+.aurora-brand-intro { max-width: 760px; margin: 0 auto 32px; text-align: center; color: var(--au-muted); }
 
 /* ---------- 品牌宫格 [aurora_brands] ---------- */
 .aurora-brands {
@@ -340,6 +419,7 @@ a { color: var(--au-gold-deep); }
 }
 .aurora-hero h1 { margin: .4em 0 .3em; font-size: clamp(36px, 7vw, 72px); line-height: 1.08; }
 .aurora-hero p { max-width: 560px; margin: 0 auto 2em; color: var(--au-muted); }
+.aurora-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
 .aurora-section { max-width: 1120px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) 16px; }
 .aurora-section__title { margin: 0 0 1.2em; text-align: center; font-size: clamp(26px, 4vw, 38px); }
 .aurora-pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; text-align: center; }
@@ -354,6 +434,7 @@ a { color: var(--au-gold-deep); }
 	.aurora-brands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	.aurora-brands__item { min-height: 150px; }
 	.aurora-pillars { grid-template-columns: 1fr; gap: 28px; }
+	.aurora-footer__inner { grid-template-columns: 1fr; gap: 20px; padding-top: 48px; }
 	.single-product div.product .summary { margin-top: 18px; }
 	/* 产品页已有大号 WhatsApp 按钮，隐藏悬浮按钮，避免遮挡；清单按钮下移 */
 	.single-product .aurora-wa-float { display: none; }
