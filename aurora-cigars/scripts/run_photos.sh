@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# 实拍图上传（在你自己的 Mac 上运行）：按文件名把照片配到对应的产品
-#   更新插件 → 下架重复型号 → 列出照片和产品的对照（桌面上同时生成对照表）→ 输入 y 确认后上传
-# 用法：bash run_photos.sh [照片文件夹]   不写文件夹时，会提示把文件夹拖进终端窗口
+# 产品实拍图（在你自己的 Mac 上运行），分两步，第一步不改任何东西：
+#   bash run_photos.sh                 第 1 步：清点照片（只读）→ 桌面生成「aurora-图片清单.zip」发给 Claude 核对
+#   bash run_photos.sh apply           第 2 步：按 Claude 整理、你确认过的对照表（content/photo-mapping.csv）上传
+#   bash run_photos.sh restore 备份.json  撤销：把产品图片恢复成备份时的样子
 set -euo pipefail
-DIR="${1:-}"
-[ -n "$DIR" ] && [ -d "$DIR" ] && DIR="$(cd "$DIR" && pwd)"
+MODE="${1:-inventory}"
+ARG="${2:-}"
 cd "$(dirname "$0")"
 
 if ! python3 -c 'print()' >/dev/null 2>&1; then
@@ -19,24 +20,49 @@ while [ -z "${AURORA_APP_PASSWORD:-}" ]; do
 done
 export AURORA_APP_PASSWORD
 
-# 把文件夹拖进终端时，路径末尾会多一个空格，空格等字符前会加反斜杠
-while [ -z "$DIR" ] || [ ! -d "$DIR" ]; do
-	read -r -p "把放照片的文件夹拖进这个窗口，然后按回车：" DIR
-	DIR="$(printf '%s' "$DIR" | sed -e 's/[[:space:]]*$//' -e "s/^'\(.*\)'$/\1/" -e 's/\\\(.\)/\1/g')"
-	[ -d "$DIR" ] || echo "✗ 找不到这个文件夹：$DIR"
-done
+ask_folder() {
+	DIR=""
+	# 把文件夹拖进终端时，路径末尾会多一个空格，空格等字符前会加反斜杠
+	while [ -z "$DIR" ] || [ ! -d "$DIR" ]; do
+		read -r -p "把放照片的文件夹拖进这个窗口，然后按回车：" DIR
+		DIR="$(printf '%s' "$DIR" | sed -e 's/[[:space:]]*$//' -e "s/^'\(.*\)'$/\1/" -e 's/\\\(.\)/\1/g')"
+		[ -d "$DIR" ] || echo "✗ 找不到这个文件夹：$DIR"
+	done
+}
 
 run() { echo; echo "━━ $1"; shift; python3 aurora_setup.py "$@"; }
-run "1/4 检查连接"     check
-run "2/4 更新插件"     install-plugin
-run "3/4 下架重复型号" dedupe
-run "4/4 照片对照"     images --photos "$DIR" --dry-run
-echo
-read -r -p "按上面的对照上传照片吗？确认请输入 y 然后按回车（其他键取消）：" OK
-if [ "$OK" = "y" ] || [ "$OK" = "Y" ]; then
-	python3 aurora_setup.py images --photos "$DIR"
+
+case "$MODE" in
+inventory)
+	ask_folder
+	run "1/2 检查连接" check
+	run "2/2 清点照片（只读，不改网站，不改原图）" photo-inventory --photos "$DIR"
 	echo
-	echo "✓ 完成。请把终端截图和桌面上的「aurora-实拍图对照表.csv」发给 Claude。"
-else
-	echo "已取消，没有上传任何照片。对照表在桌面「aurora-实拍图对照表.csv」，可以发给 Claude 看看哪些没对上。"
-fi
+	echo "✓ 完成。请把桌面上的「aurora-图片清单.zip」发给 Claude。"
+	;;
+apply)
+	MAP="../content/photo-mapping.csv"
+	[ -f "$MAP" ] || { echo "✗ 还没有核对好的对照表（content/photo-mapping.csv），请先完成第 1 步并等 Claude 整理。"; exit 1; }
+	ask_folder
+	run "1/4 检查连接" check
+	run "2/4 上传计划（只显示，不上传）" photo-apply --photos "$DIR" --mapping "$MAP" --dry-run
+	echo
+	read -r -p "按上面的计划上传吗？确认请输入 y 然后按回车（其他键取消）：" OK
+	if [ "$OK" != "y" ] && [ "$OK" != "Y" ]; then
+		echo "已取消，网站没有任何改动。"
+		exit 0
+	fi
+	run "3/4 上传并关联图片" photo-apply --photos "$DIR" --mapping "$MAP"
+	run "4/4 导出诊断包" audit --out ~/Desktop/aurora-audit-配图后.zip
+	echo
+	echo "✓ 完成。请把终端截图和桌面上的「aurora-audit-配图后.zip」发给 Claude 检查。"
+	;;
+restore)
+	[ -f "$ARG" ] || { echo "✗ 用法：bash run_photos.sh restore 桌面上的备份文件.json"; exit 1; }
+	run "恢复产品图片" photo-restore --backup "$ARG"
+	;;
+*)
+	echo "用法：bash run_photos.sh [apply | restore 备份.json]"
+	exit 1
+	;;
+esac

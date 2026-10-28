@@ -513,8 +513,20 @@ def name_score(a, b):
     return difflib.SequenceMatcher(None, ka, kb).ratio()
 
 
+def walk_photos(photo_dir):
+    """照片目录（含子文件夹）里的所有图片，返回按字母排序的相对路径。"""
+    out = []
+    for root, dirs, files in os.walk(photo_dir):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(files):
+            if not name.startswith(".") and os.path.splitext(name)[1].lower() in PHOTO_EXT:
+                out.append(os.path.relpath(os.path.join(root, name), photo_dir))
+    return out
+
+
 def match_photos(photo_dir, products):
     """实拍图按文件名对应产品：SKU、产品名、英文名、中文名都可以，不分大小写、重音、空格和符号。
+    子文件夹名也参与比对（例如「Cohiba/Siglo VI.jpg」）。
     同一款多张图写成「名称 2」「名称-2」「名称 (2)」，第一张做主图，其余进图集。
     同一型号既有上架款又有草稿（重复款）时只配给上架的；两款以上同样接近时不配，列为「不确定」。
     返回 ({产品 id: [文件]}, 对照表行, 未匹配的文件, 不确定的文件)。"""
@@ -555,14 +567,15 @@ def match_photos(photo_dir, products):
         return (top if len(top) == 1 or same else []), best  # 有两款以上分数接近 → 不确定，留给人工核对
 
     groups, rows, unmatched, unsure = {}, [], [], []
-    for name in sorted(os.listdir(photo_dir)):
-        stem, ext = os.path.splitext(name)
-        if ext.lower() not in PHOTO_EXT or name.startswith("."):
-            continue
+    for name in walk_photos(photo_dir):
+        stem = os.path.splitext(os.path.basename(name))[0]
+        folder = os.path.basename(os.path.dirname(name))
         tries = [(stem, 1)]
         m = re.match(r"^(.*?)[\s_\-]*\(?(\d{1,2})\)?$", stem)
         if m and m.group(1).strip():
             tries.append((m.group(1), int(m.group(2))))  # 末尾的序号当作图集顺序
+        if folder:  # 文件名对不上时，加上所在文件夹的名字再试（文件夹常常是品牌或型号）
+            tries += [(f"{folder} {t}", o) for t, o in tries]
         result = None
         for text, order in tries:
             pids, score = best_products(text)
@@ -738,6 +751,177 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
     print(f"✓ 实拍图 {counts['photo']} 款，临时图 {counts['temp'] - errors} 款，品牌图 {counts['brand']} 款")
 
 
+PHOTO_ROLES = {"主图": 0, "包装": 1, "本体": 2, "细节": 3, "其他": 4}
+
+
+def photo_info(path):
+    """图片尺寸和一份缩略图副本（长边 1000px，JPG）。Mac 上用系统自带的 sips；没有 sips 时尽量用 Pillow。
+    只读原图，不改动原文件。"""
+    width = height = None
+    thumb = None
+    if shutil.which("sips"):
+        out = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", path], capture_output=True, text=True).stdout
+        w, h = re.search(r"pixelWidth:\s*(\d+)", out), re.search(r"pixelHeight:\s*(\d+)", out)
+        width, height = (int(w.group(1)) if w else None), (int(h.group(1)) if h else None)
+        tmp = os.path.join(tempfile.mkdtemp(prefix="aurora-thumb-"), "t.jpg")
+        r = subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75", "-Z", "1000", path, "--out", tmp],
+                           capture_output=True)
+        if r.returncode == 0 and os.path.exists(tmp):
+            thumb = open(tmp, "rb").read()
+    else:
+        try:
+            from PIL import Image
+            import io
+            with Image.open(path) as im:
+                width, height = im.size
+                im = im.convert("RGB")
+                im.thumbnail((1000, 1000))
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=75)
+                thumb = buf.getvalue()
+        except Exception:
+            pass
+    return width, height, thumb
+
+
+def product_snapshot(products):
+    """产品现有图片的快照：用于备份和还原。"""
+    return [{"id": p["id"], "sku": p.get("sku", ""), "name": p["name"], "status": p.get("status"),
+             "image_source": image_source(p),
+             "images": [{"id": i.get("id"), "src": i.get("src", "")} for i in p.get("images") or []]} for p in products]
+
+
+def save_backup(products, label):
+    stamp = __import__("datetime").datetime.now().strftime("%Y%m%d-%H%M")
+    path = os.path.expanduser(f"~/Desktop/aurora-产品图片备份-{label}-{stamp}.json")
+    path = path if os.path.isdir(os.path.dirname(path)) else os.path.abspath(os.path.basename(path))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(product_snapshot(products), f, ensure_ascii=False, indent=1)
+    return path
+
+
+def cmd_photo_inventory(wp, photo_dir, out_path):
+    """第 1 步（只读，不改网站，不改原图）：清点照片目录及子文件夹，记录路径、大小、尺寸、指纹（找重复文件），
+    做缩略图副本，附上网站现有产品清单和按文件名的初步建议，打包给 Claude 逐张核对。同时备份产品现有图片。"""
+    import hashlib
+    if not photo_dir or not os.path.isdir(photo_dir):
+        raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
+    files = walk_photos(photo_dir)
+    if not files:
+        raise SystemExit("✗ 这个文件夹里没有图片（支持 jpg / jpeg / png / webp / heic）")
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,categories,images,meta_data,"
+                                                        "regular_price,stock_status", "status": "any"})
+    _, rows, _, _ = match_photos(photo_dir, products)
+    suggest = {}
+    for r in rows:
+        suggest.setdefault(r["file"], []).append(r)
+    backup = save_backup(products, "清点时")
+    seen, manifest = {}, []
+    out_path = os.path.expanduser(out_path)
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, rel in enumerate(files, 1):
+            full = os.path.join(photo_dir, rel)
+            raw = open(full, "rb").read()
+            digest = hashlib.sha1(raw).hexdigest()
+            width, height, thumb = photo_info(full)
+            thumb_name = f"thumbs/{n:04d}.jpg" if thumb else ""
+            if thumb:
+                z.writestr(thumb_name, thumb)
+            hits = suggest.get(rel, [])
+            manifest.append({
+                "no": n, "file": rel, "folder": os.path.dirname(rel), "bytes": len(raw), "width": width, "height": height,
+                "sha1": digest, "duplicate_of": seen.get(digest, ""), "thumb": thumb_name,
+                "suggest": hits[0]["status"] if hits else "",
+                "suggest_sku": " | ".join(h.get("sku", "") for h in hits if h.get("sku")),
+                "suggest_product": " | ".join(h.get("product", "") for h in hits if h.get("product")),
+            })
+            seen.setdefault(digest, rel)
+            if n % 20 == 0 or n == len(files):
+                print(f"  已清点 {n}/{len(files)}")
+        buf = __import__("io").StringIO()
+        w = csv.DictWriter(buf, list(manifest[0].keys()))
+        w.writeheader()
+        w.writerows(manifest)
+        z.writestr("manifest.csv", "﻿" + buf.getvalue())
+        cats = lambda p: [c.get("name") for c in p.get("categories", [])]
+        z.writestr("products.json", json.dumps([dict(snap, categories=cats(p), price=p.get("regular_price"),
+                                                     stock=p.get("stock_status"), name_cn=p.get("aurora_name_cn", ""),
+                                                     name_en=next((m["value"] for m in p.get("meta_data", [])
+                                                                   if m["key"] == "aurora_name_en"), ""))
+                                                for snap, p in zip(product_snapshot(products), products)],
+                                               ensure_ascii=False, indent=1))
+    dups = sum(1 for m in manifest if m["duplicate_of"])
+    print(f"\n✓ 图片 {len(files)} 张（其中内容完全相同的重复文件 {dups} 张），网站产品 {len(products)} 款")
+    print(f"✓ 清单包：{out_path}（{os.path.getsize(out_path) // 1024} KB）")
+    print(f"✓ 产品现有图片已备份：{backup}")
+    print("  原始照片没有任何改动，网站也没有任何改动。")
+
+
+def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
+    """第 2 步：按核对确认后的对照表给产品配图，只处理状态为「确认」的行。
+    同一产品的图按 主图 → 包装 → 本体 → 细节 → 其他 排列：第一张是产品主图，其余进产品图库。
+    先在桌面备份这些产品现有的图片；上传的是转换/缩小后的副本，原始照片不改动。"""
+    if not photo_dir or not os.path.isdir(photo_dir):
+        raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
+    with open(mapping_csv, newline="", encoding="utf-8-sig") as f:
+        rows = [r for r in csv.DictReader(f)]
+    todo = [r for r in rows if r.get("status", "").strip() == "确认"]
+    held = len(rows) - len(todo)
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,status,images,meta_data", "status": "any"})
+    by_sku = {(p.get("sku") or "").upper(): p for p in products if p.get("sku")}
+    plan, problems = {}, []
+    for r in todo:
+        p = by_sku.get(r["sku"].strip().upper())
+        full = os.path.join(photo_dir, r["file"])
+        if not p:
+            problems.append(f"网站上没有 SKU {r['sku']}（{r['file']}）")
+        elif not os.path.isfile(full):
+            problems.append(f"找不到照片 {r['file']}")
+        else:
+            key = (PHOTO_ROLES.get(r.get("role", "").strip(), 4), int(r.get("order") or 1))
+            plan.setdefault(p["id"], (p, []))[1].append((key, full, r))
+    print(f"对照表 {len(rows)} 行：确认 {len(todo)} 行，待确认/不上传 {held} 行（这次不处理）")
+    print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图")
+    for msg in problems:
+        print(f"! {msg}")
+    if problems:
+        raise SystemExit("✗ 对照表和网站或照片文件夹对不上，先不上传。请把这几行发给 Claude。")
+    for p, items in plan.values():
+        items.sort(key=lambda x: x[0])
+        print(f"  {p['sku']:<14} {p['name']}：" + "，".join(f"{r.get('role') or '其他'} {os.path.basename(r['file'])}"
+                                                       for _, _, r in items))
+    if dry_run:
+        return
+    backup = save_backup([p for p, _ in plan.values()], "上传前")
+    print(f"✓ 这些产品现有的图片已备份：{backup}")
+    uploaded, updates = {}, []
+    for done, (p, items) in enumerate(plan.values(), 1):
+        ids = []
+        for n, (_, full, _) in enumerate(items, 1):
+            if full not in uploaded:
+                src, ext = prepare_photo(full)
+                base = re.sub(r"[^A-Za-z0-9-]+", "-", p["sku"]).strip("-")
+                uploaded[full] = wp.upload(src, f"{base}{'' if n == 1 else f'-{n}'}{ext}", p["name"])
+            ids.append(uploaded[full])
+        updates.append({"id": p["id"], "images": [{"id": i} for i in ids],
+                        "meta_data": [{"key": "aurora_image_source", "value": "photo"}]})
+        print(f"  已上传 {done}/{len(plan)}：{p['name']}（{len(ids)} 张）")
+    for i in range(0, len(updates), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    print(f"\n✓ 已更新 {len(updates)} 款产品，上传 {len(uploaded)} 张图片。需要撤销时运行：run_photos.sh restore {backup}")
+
+
+def cmd_photo_restore(wp, backup_json):
+    """按备份把产品图片恢复成备份时的样子（图片文件仍在媒体库里，只是重新关联）。"""
+    with open(os.path.expanduser(backup_json), encoding="utf-8") as f:
+        snap = json.load(f)
+    updates = [{"id": p["id"], "images": [{"id": i["id"]} for i in p["images"] if i.get("id")],
+                "meta_data": [{"key": "aurora_image_source", "value": p.get("image_source") or ""}]} for p in snap]
+    for i in range(0, len(updates), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    print(f"✓ 已把 {len(updates)} 款产品的图片恢复为备份时的状态")
+
+
 def cmd_audit(wp, out_path):
     """只读诊断：收集主题、插件、代码片段、产品/分类统计和前台页面 HTML + 同站 CSS，
     打包成 zip，方便在别处还原页面效果、排查设计冲突和重复产品。不修改站点任何内容。"""
@@ -780,12 +964,31 @@ def cmd_audit(wp, out_path):
                 "stock": p.get("stock_status"), "link": p.get("permalink"),
                 "cats": [c.get("name", c.get("id")) for c in p.get("categories", [])],
                 "images": len(p.get("images") or []),
+                "image_srcs": [i.get("src", "") for i in p.get("images") or []],
                 "ours": p.get("sku") in ours,
                 "meta": {m["key"]: m["value"] for m in p.get("meta_data", [])
                          if isinstance(m.get("value"), (str, int, float)) and not m["key"].startswith("_")},
             } for p in rows],
         }
     section("products", products)
+
+    def image_check():
+        """实拍图逐张试加载（HEAD 请求），找出破损的图片链接。"""
+        items = report.get("products", {}).get("items", []) if isinstance(report.get("products"), dict) else []
+        out = []
+        for p in items:
+            if p.get("meta", {}).get("aurora_image_source") != "photo":
+                continue
+            for src in p.get("image_srcs", []):
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(src, method="HEAD"), timeout=30) as r:
+                        status, ctype = r.status, r.headers.get("Content-Type", "")
+                except Exception as e:
+                    status, ctype = getattr(e, "code", str(e)[:80]), ""
+                out.append({"id": p["id"], "sku": p.get("sku"), "src": src, "status": status, "type": ctype})
+        bad = [x for x in out if x["status"] != 200 or not str(x["type"]).startswith("image/")]
+        return {"checked": len(out), "broken": bad}
+    section("image_check", image_check)
 
     # 前台页面：用预览密钥以访客身份抓取，并下载同站 CSS
     key = (wp.get_or_none("wp/v2/settings", {"_fields": "aurora_preview_key"}) or {}).get("aurora_preview_key", "")
@@ -984,7 +1187,8 @@ def cmd_cleanup(wp, dry_run=False):
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
-                                       "preview-link", "audit", "restore-pages", "dedupe", "all"])
+                                       "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
+                                       "photo-restore", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -992,6 +1196,8 @@ def main():
     ap.add_argument("--limit", type=int, help="只导入前 N 行（测试用）")
     ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 或产品名命名")
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
+    ap.add_argument("--mapping", metavar="CSV", help="photo-apply：核对确认后的照片对照表")
+    ap.add_argument("--backup", metavar="JSON", help="photo-restore：产品图片备份文件")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")
     ap.add_argument("--replace-pages", action="store_true", help="pages 命令：同名的站点原有页面改名为 -old 后替换（默认保留不动）")
@@ -1036,6 +1242,13 @@ def main():
         cmd_restore_pages(wp, args.dry_run)
     if args.command == "dedupe":
         cmd_dedupe(wp, args.dry_run)
+    if args.command == "photo-inventory":
+        cmd_photo_inventory(wp, args.photos, args.out if args.out != "~/Desktop/aurora-audit.zip"
+                            else "~/Desktop/aurora-图片清单.zip")
+    if args.command == "photo-apply":
+        cmd_photo_apply(wp, args.photos, args.mapping, args.dry_run)
+    if args.command == "photo-restore":
+        cmd_photo_restore(wp, args.backup)
     if args.command in ("preview-link", "all") and not args.dry_run:
         cmd_preview_link(wp)
 

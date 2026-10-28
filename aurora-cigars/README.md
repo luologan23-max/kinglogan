@@ -77,20 +77,29 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 
 `run_fix.sh` 依次：把插件更新到 1.1（整合模式）→ 删除遗留的临时安装片段、停用多余插件 → 把被 1.0 改名成 `-old` 的原有页面（首页、关于、常见问题、批发）改回原网址，并恢复原来的网站首页，本脚本建的同名页面改成草稿 `aurora-*` → 标准目录里和原有产品同型号的那部分改成草稿 → 在桌面导出只读诊断包 `aurora-audit-修复后.zip`。都不删除任何内容，后台随时可以恢复。
 
-## 实拍图上传（按文件名自动配到产品）
+## 产品实拍图（先清点核对，确认后再上传）
+
+分三步，第 1 步不改网站、也不改原图：
 
 ```bash
+# 第 1 步：清点（只读）。运行后把照片文件夹拖进终端窗口
 cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_photos.sh
+# 第 2 步：Claude 核对后提交 content/photo-mapping.csv，你确认后上传（同一条命令，末尾加 apply）
+… run_photos.sh apply
+# 撤销：按桌面上的备份恢复产品图片
+… run_photos.sh restore ~/Desktop/aurora-产品图片备份-上传前-日期.json
 ```
 
-运行后把放照片的文件夹拖进终端窗口、按回车。`run_photos.sh` 会：更新插件 → 把标准目录里与原有产品同型号的款改为草稿 →
-列出每张照片对应的产品（桌面生成「aurora-实拍图对照表.csv」）→ 输入 `y` 确认后上传。
-
-- 文件名写 SKU、英文名或中文名都可以，不分大小写、重音、空格和下划线；数字和罗马数字必须一致（No.1 不会配给 No.2）
-- 同一款多张：`Fonseca No.1.jpg` 是主图，`Fonseca No.1 (2).jpg`、`Fonseca No.1-3.jpg` 进图集
-- 上架的产品优先；站点里完全同名的两款都会配上；两款同样接近时列为「不确定」，不会乱配
-- Mac 上自动把 HEIC 转成 JPG、把大于 2.5MB 的图缩到长边 2000px；上传后的文件名按 SKU 命名
-- 已经有实拍图的产品再跑一次不会重复上传
+- **清点**（`photo-inventory`）：扫描文件夹及子文件夹，记录每张图的路径、大小、尺寸、SHA1 指纹（找出内容完全相同的重复文件），
+  生成长边 1000px 的缩略图副本，附上网站现有产品清单和按文件名的初步建议，打包成桌面上的「aurora-图片清单.zip」；
+  同时把所有产品现有的图片备份成 JSON
+- **对照表**（`content/photo-mapping.csv`）：`file`（相对路径）、`sku`、`product`、`role`（主图 / 包装 / 本体 / 细节 / 其他）、
+  `order`、`status`（确认 / 待确认 / 不上传）、`note`。只有「确认」的行会上传
+- **上传**（`photo-apply`）：先列出计划，输入 `y` 才执行；先备份涉及的产品现有图片；同一产品按 主图 → 包装 → 本体 → 细节 → 其他 排列，
+  第一张是产品主图，其余进 WooCommerce 产品图库；上传的是副本（Mac 上 HEIC 转 JPG、大图缩到长边 2000px），文件按 SKU 命名，原图不动；
+  完成后自动导出诊断包，诊断包会逐张试加载实拍图（`image_check`）
+- **按文件名的初步建议**：SKU、英文名、中文名都能对，不分大小写、重音、空格和下划线，子文件夹名也参与；数字和罗马数字必须一致；
+  上架的产品优先；两款同样接近时标为不确定。建议只是参考，对照表以人工核对为准
 
 ## 上线步骤
 
@@ -154,7 +163,7 @@ php tests/integrate_mode_test.php                                         # 整�
 php tests/private_mode_test.php anon                                      # 内部预览模式：anon / loggedin / key-good / key-bad / off
 node tests/integrate_bridge_test.js <诊断包目录> <vendor 目录>            # 用线上页面测「＋」和「加入询价清单」
 node tests/render_audit.js <诊断包目录> <vendor 目录> <输出目录> [CSS]      # 离线还原线上页面截图（AURORA_ONLY=home,shop 只渲染部分页面；AURORA_LOCAL_PLUGIN=1 用本地插件文件看即将部署的效果）
-python3 tests/photo_match_test.py                                       # 实拍图按文件名配产品、重复型号判定
+python3 tests/photo_match_test.py                                       # 照片按文件名的初步建议、重复型号判定
 python3 tests/mock_wc_server.py 8765 &                                   # 模拟 WooCommerce API（MOCK_BLOCK_DELETE=1 模拟拦截 DELETE）
 AURORA_SITE=http://127.0.0.1:8765 AURORA_USER=tester AURORA_APP_PASSWORD='abcd efgh ijkl' \
   python3 scripts/aurora_setup.py all tests/sample_products.csv
