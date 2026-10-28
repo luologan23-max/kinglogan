@@ -8,7 +8,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AUTH = "Basic " + base64.b64encode(b"tester:abcd efgh ijkl").decode()
-state = {"products": [], "cats": [], "pages": [], "settings": {}, "menus": [], "menu_items": [], "media": [], "next": 100,
+state = {"products": [], "cats": [], "settings": {"show_on_front": "page", "page_on_front": 7}, "menus": [], "menu_items": [], "media": [], "next": 100,
+         # 预置一个用户自己做的首页，用来测试「不覆盖」逻辑
+         "pages": [{"id": 7, "slug": "home", "title": "Home", "content": "<p>用户原有首页</p>", "status": "publish"}],
          "plugins": [{"plugin": "yith-woocommerce-wishlist/init", "name": "YITH Wishlist", "status": "active"},
                      {"plugin": "elementor/elementor", "name": "Elementor", "status": "active"}]}
 
@@ -115,7 +117,7 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, res)
         if p == "wp/v2/pages":
             if method == "GET":
-                return self.send(200, [{"id": pg["id"]} for pg in state["pages"] if pg["slug"] == q.get("slug")])
+                return self.send(200, [dict(pg, content={"raw": pg["content"]}) for pg in state["pages"] if pg["slug"] == q.get("slug")])
             pg = dict(body, id=new_id())
             state["pages"].append(pg)
             return self.send(201, pg)
@@ -126,6 +128,8 @@ class H(BaseHTTPRequestHandler):
                     pg.update(body)
                     return self.send(200, pg)
         if p == "wp/v2/settings":
+            if method == "GET":
+                return self.send(200, {k: state["settings"].get(k) for k in ("show_on_front", "page_on_front")})
             state["settings"].update(body)
             return self.send(200, body)
         if p == "__state":

@@ -106,6 +106,15 @@ function aurora_preview_key() {
 	return $key;
 }
 
+// 预览密钥对管理员开放到 REST（/wp/v2/settings），便于自动化截图
+add_action( 'rest_api_init', function () {
+	aurora_preview_key();
+	register_setting( 'general', 'aurora_preview_key', array(
+		'type'         => 'string',
+		'show_in_rest' => true,
+	) );
+} );
+
 function aurora_private_mode() {
 	return 1 === absint( aurora_opt( 'private_mode' ) );
 }

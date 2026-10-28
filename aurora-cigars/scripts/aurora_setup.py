@@ -344,24 +344,40 @@ def cmd_import(wp, csv_path, overrides, dry_run=False, limit=None):
     print(f"✓ 导入完成，失败 {errors} 条")
 
 
+PAGE_MARKER = "<!-- aurora:managed -->"
+BACKUP_DIR = os.path.join(CONTENT_DIR, "backup")
+
+
 def cmd_pages(wp, dry_run=False):
+    """创建/更新 Aurora 页面。同 slug 的页面如果不是本脚本建的（没有标记），
+    先把原页面完整备份到 content/backup/，再把原页面 slug 改成「-old」（内容不动），然后新建。"""
     ids = {}
     for slug, title, filename in PAGES:
         with open(os.path.join(CONTENT_DIR, "pages", filename), encoding="utf-8") as f:
-            html = f.read()
+            html = PAGE_MARKER + "\n" + f.read()
         if dry_run:
             print(f"[dry-run] 页面 /{slug}/ {title}")
             continue
-        found, _ = wp.req("GET", "wp/v2/pages", params={"slug": slug, "status": "publish,draft", "_fields": "id"})
+        found, _ = wp.req("GET", "wp/v2/pages", params={"slug": slug, "status": "publish,draft,private", "context": "edit"})
         body = {"title": title, "slug": slug, "content": html, "status": "publish"}
-        if found:
+        if found and PAGE_MARKER in found[0]["content"]["raw"]:
             res, _ = wp.req("POST", f"wp/v2/pages/{found[0]['id']}", body)
             print(f"✓ 更新页面 /{slug}/")
         else:
+            if found:
+                old = found[0]
+                os.makedirs(BACKUP_DIR, exist_ok=True)
+                path = os.path.join(BACKUP_DIR, f"page-{slug}-{old['id']}.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(old, f, ensure_ascii=False, indent=2)
+                wp.req("POST", f"wp/v2/pages/{old['id']}", {"slug": f"{slug}-old"})
+                print(f"· 原页面 /{slug}/（ID {old['id']}）已备份到 {os.path.relpath(path)}，改名为 /{slug}-old/，内容未动")
             res, _ = wp.req("POST", "wp/v2/pages", body)
             print(f"✓ 新建页面 /{slug}/")
         ids[slug] = res["id"]
     if not dry_run:
+        before, _ = wp.req("GET", "wp/v2/settings", params={"_fields": "show_on_front,page_on_front"})
+        print(f"· 原首页设置：{before}（需要恢复时改回这个）")
         wp.req("POST", "wp/v2/settings", {"show_on_front": "page", "page_on_front": ids["home"],
                                           "title": "Aurora Cigars", "description": "古巴雪茄 · 迪拜直供"})
         print("✓ 已设为网站首页")
