@@ -73,7 +73,7 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_fix.sh
 ```
 
-`run_fix.sh` 依次：把插件更新到 1.1（整合模式）→ 删除遗留的临时安装片段、停用多余插件 → 把被 1.0 改名成 `-old` 的原有页面（首页、关于、常见问题、批发）改回原网址，并恢复原来的网站首页，本脚本建的同名页面改成草稿 `aurora-*` → 标准目录里和原有产品同型号的那部分改成草稿 → 在桌面导出只读诊断包 `aurora-audit.zip`。都不删除任何内容，后台随时可以恢复。
+`run_fix.sh` 依次：把插件更新到 1.1（整合模式）→ 删除遗留的临时安装片段、停用多余插件 → 把被 1.0 改名成 `-old` 的原有页面（首页、关于、常见问题、批发）改回原网址，并恢复原来的网站首页，本脚本建的同名页面改成草稿 `aurora-*` → 标准目录里和原有产品同型号的那部分改成草稿 → 在桌面导出只读诊断包 `aurora-audit-修复后.zip`。都不删除任何内容，后台随时可以恢复。
 
 ## 上线步骤
 

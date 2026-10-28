@@ -22,6 +22,6 @@ run "2/6 更新插件"                 install-plugin
 run "3/6 清理遗留安装片段和多余插件" cleanup
 run "4/6 恢复原有页面"             restore-pages
 run "5/6 重复型号改为草稿"          dedupe
-run "6/6 导出诊断包"               audit
+run "6/6 导出诊断包"               audit --out ~/Desktop/aurora-audit-修复后.zip
 echo
-echo "✓ 完成。请把桌面上的 aurora-audit.zip 发给 Claude 检查效果。"
+echo "✓ 完成。请把桌面上的 aurora-audit-修复后.zip 发给 Claude 检查效果。"

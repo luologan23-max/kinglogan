@@ -121,7 +121,7 @@ class H(BaseHTTPRequestHandler):
             if "aurora-core/aurora-core.php" not in names:
                 return self.send(500, {"code": "bad_zip", "names": names})
             state["plugins"] = [x for x in state["plugins"] if x["plugin"] != "aurora-core/aurora-core"]
-            state["plugins"].append({"plugin": "aurora-core/aurora-core", "name": "Aurora Core", "status": "active"})
+            state["plugins"].append({"plugin": "aurora-core/aurora-core", "name": "Aurora Core", "status": "active", "version": re.search(r"Version: (\S+)", zipfile.ZipFile(io.BytesIO(base64.b64decode(b64))).read("aurora-core/aurora-core.php").decode()).group(1)})
             return self.send(200, {"installed": True, "active": True})
         if p == "wp/v2/plugins":
             return self.send(200, state["plugins"])

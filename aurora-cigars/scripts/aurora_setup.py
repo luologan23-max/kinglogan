@@ -261,8 +261,10 @@ def cmd_install_plugin(wp, dry_run=False):
             print("✓ 已删除临时安装片段")
         except SystemExit as e:
             print(f"! 临时安装片段（ID {sid}）删除失败，请到后台 Snippets 里手动删除：{e}")
-    if not plugin_active(wp):
+    info = wp.get_or_none(f"wp/v2/plugins/{PLUGIN_FILE}", {"_fields": "status,version"}) or {}
+    if info.get("status") != "active":
         raise SystemExit("✗ 安装后检查发现 aurora-core 没有处于启用状态，请到后台 插件 页面查看")
+    print(f"✓ 站点上的 aurora-core 现在是 {info.get('version')} 版")
 
 
 def cmd_configure(wp, dry_run=False):
