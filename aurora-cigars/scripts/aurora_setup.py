@@ -233,6 +233,12 @@ def cmd_install_plugin(wp, dry_run=False):
         raise SystemExit(f"✗ 找不到插件包 {PLUGIN_ZIP}，先运行 scripts/build_zip.sh")
     with open(PLUGIN_ZIP, "rb") as f:
         payload = base64.b64encode(f.read()).decode()
+    with zipfile.ZipFile(PLUGIN_ZIP) as z:
+        local_version = re.search(r"Version:\s*(\S+)", z.read("aurora-core/aurora-core.php").decode()).group(1)
+    current = wp.get_or_none(f"wp/v2/plugins/{PLUGIN_FILE}", {"_fields": "status,version"}) or {}
+    if not dry_run and current.get("status") == "active" and current.get("version") == local_version:
+        print(f"✓ 站点上的 aurora-core 已经是 {local_version} 版，无需更新")
+        return
     with open(os.path.join(SCRIPT_DIR, "installer_snippet.php"), encoding="utf-8") as f:
         code = f.read()
     code = code.split("\n", 1)[1].replace("__AURORA_ZIP_BASE64__", payload)  # Code Snippets 不要 <?php 开头
@@ -811,7 +817,17 @@ def cmd_cleanup(wp, dry_run=False):
             if dry_run:
                 print(f"[dry-run] 将删除遗留的临时安装片段 ID {sn['id']}")
                 continue
-            wp.delete(f"code-snippets/v1/snippets/{sn['id']}")
+            try:
+                wp.delete(f"code-snippets/v1/snippets/{sn['id']}")
+            except SystemExit as e:
+                # 有的服务器第一次删除其实成功了却返回错误，第二次再删就报「删不掉」：先看它是否还在
+                left = next((x for x in wp.get_or_none("code-snippets/v1/snippets") or [] if x["id"] == sn["id"]), None)
+                if left:
+                    if left.get("active"):
+                        wp.req("POST", f"code-snippets/v1/snippets/{sn['id']}", {"active": False})
+                    print(f"! 遗留的临时安装片段 ID {sn['id']} 删不掉，已确认是停用状态、不会运行，"
+                          f"可以之后到后台 Snippets 里手动删除。（{str(e).splitlines()[0]}）")
+                    continue
             print(f"✓ 已删除遗留的临时安装片段 ID {sn['id']}")
     plugins, _ = wp.req("GET", "wp/v2/plugins", params={"_fields": "plugin,name,status"})
     for p in plugins:

@@ -108,6 +108,8 @@ class H(BaseHTTPRequestHandler):
             if sid not in state["snippets"]:
                 return self.send(404, {"code": "not_found"})
             if method == "DELETE":
+                if os.environ.get("MOCK_STUCK_DELETE") and "leftover" in state["snippets"][sid]["code"]:
+                    return self.send(500, {"code": "rest_cannot_delete", "message": "The snippet could not be deleted."})
                 return self.send(200, state["snippets"].pop(sid))
             state["snippets"][sid].update(body)
             return self.send(200, state["snippets"][sid])
