@@ -4,6 +4,11 @@ require __DIR__ . '/wp_stubs.php';
 function aur6_card_open() {} // 站点片段 14 定义的函数
 function is_product() { return true; }
 function home_url( $p = '/' ) { return 'https://example.com' . $p; }
+function get_term( $id, $tax ) { return (object) array( 'term_id' => $id, 'slug' => 'limited-editions', 'count' => $GLOBALS['term_count'] ?? 0 ); }
+function do_shortcode( $s ) { return $s; }
+function shortcode_exists( $tag ) { return false; }
+function get_page_by_path( $path ) { return 'my-request' === $path ? (object) array( 'ID' => 241 ) : null; }
+function get_permalink( $p ) { return 'https://example.com/my-request/'; }
 // 模拟 Code Snippets 片段表：一条启用的站点 CSS、一条停用的
 class Fake_WPDB {
 	public $prefix = 'wp_';
@@ -65,5 +70,25 @@ check( '其他页面照常分段、不加载 aurora-pages.css', array() === $GLO
 $GLOBALS['is_page'] = false;
 $GLOBALS['queried'] = (object) array( 'post_content' => $home );
 check( '商品等非页面不受影响', ! aurora_handbuilt_page() );
+
+// 页面里粘贴的 PHP 模板：没有产品时显示原来的空状态，有产品时改为 [products] 列表，其余 PHP 片段去掉
+$php_page = "<div class=\"le-products\">\n<?php\n\$args = array(\n  'post_type' => 'product',\n  'tax_query' => array(array('taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => 48,)),\n);\n"
+	. "\$q = new WP_Query(\$args);\nif (\$q->have_posts()): ?>\n<div class=\"grid\"><?php while(\$q->have_posts()): \$q->the_post(); ?><a href=\"<?php the_permalink(); ?>\">x</a><?php endwhile; ?></div>\n"
+	. "<?php else: ?>\n<div class=\"le-empty\">Allocations Currently Closed</div>\n<?php endif; ?>\n</div><p><?php echo 1; ?>tail</p>";
+$GLOBALS['term_count'] = 0;
+$out = aurora_render_embedded_php( $php_page );
+check( '粘贴的 PHP：分类没有产品时显示原来的空状态', false !== strpos( $out, 'le-empty' ) && false === strpos( $out, 'class="grid"' ) && false === strpos( $out, '<?php' ) && false !== strpos( $out, '<p>tail</p>' ) );
+$GLOBALS['term_count'] = 3;
+$out = aurora_render_embedded_php( $php_page );
+check( '粘贴的 PHP：分类有产品时输出产品列表', false !== strpos( $out, '[products category="limited-editions" limit="12" columns="4"]' ) && false === strpos( $out, 'le-empty' ) );
+check( '没有 PHP 的页面内容原样返回', $home === aurora_render_embedded_php( $home ) );
+
+// 只剩 YITH 短代码的询价页转到需求单
+$GLOBALS['is_page'] = true;
+$GLOBALS['queried'] = (object) array( 'post_content' => '[yith_ywraq_request_quote]' );
+check( 'YITH 询价页转到需求单页面', 'https://example.com/my-request/' === aurora_quote_redirect_target() );
+$GLOBALS['queried'] = (object) array( 'post_content' => $home );
+check( '其他页面不跳转', null === aurora_quote_redirect_target() );
+$GLOBALS['is_page'] = false;
 
 exit( $fail ? 1 : 0 );

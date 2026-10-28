@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.2.0' );
+define( 'AURORA_CORE_VERSION', '1.2.1' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -228,6 +228,52 @@ add_action( 'wp', function () {
 	if ( aurora_handbuilt_page() ) {
 		remove_filter( 'the_content', 'wpautop' );
 		remove_filter( 'the_content', 'wptexturize' );
+	}
+} );
+
+// 「年度限量」页里粘贴了一段 PHP 模板（查询限量分类下的产品）。页面内容里的 PHP 不会执行，
+// 浏览器把它显示成乱码。这里照原意输出：分类下有产品时列出产品，没有时显示页面原来的「配额已关闭」提示。
+function aurora_render_embedded_php( $content ) {
+	if ( false === strpos( $content, '<?php' ) ) {
+		return $content;
+	}
+	$content = preg_replace_callback(
+		'/<\?php\s*\$args\s*=.*?[\'"]terms[\'"]\s*=>\s*(\d+).*?if\s*\(\s*\$q->have_posts\(\)\s*\)\s*:\s*\?>.*?<\?php\s*else\s*:\s*\?>(.*?)<\?php\s*endif;?\s*\?>/s',
+		function ( $m ) {
+			$term = get_term( (int) $m[1], 'product_cat' );
+			if ( $term && ! is_wp_error( $term ) && $term->count > 0 ) {
+				return do_shortcode( sprintf( '[products category="%s" limit="12" columns="4"]', esc_attr( $term->slug ) ) );
+			}
+			return $m[2];
+		},
+		$content
+	);
+	return preg_replace( '/<\?php.*?\?>/s', '', $content ); // 其余执行不了的 PHP 片段直接去掉
+}
+
+add_filter( 'the_content', function ( $content ) {
+	return aurora_handbuilt_page() ? aurora_render_embedded_php( $content ) : $content;
+}, 1 );
+
+// 「Request a Quote」页只有一个 YITH 询价插件的短代码。该插件已停用（询价清单用站点自己的需求单页），
+// 页面上只剩一行短代码文字，旧链接转到需求单页面。
+function aurora_quote_redirect_target() {
+	if ( ! is_page() || shortcode_exists( 'yith_ywraq_request_quote' ) ) {
+		return null;
+	}
+	$post = get_queried_object();
+	if ( ! isset( $post->post_content ) || false === strpos( $post->post_content, '[yith_ywraq_request_quote' ) ) {
+		return null;
+	}
+	$list = get_page_by_path( 'my-request' );
+	return $list ? get_permalink( $list ) : home_url( '/' );
+}
+
+add_action( 'template_redirect', function () {
+	$target = aurora_quote_redirect_target();
+	if ( $target ) {
+		wp_safe_redirect( $target, 302 );
+		exit;
 	}
 } );
 
