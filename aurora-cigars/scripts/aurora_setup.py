@@ -7,6 +7,7 @@
   export AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx'
 
   python3 aurora_setup.py check                       # 测试连接
+  python3 aurora_setup.py install-plugin              # 自动安装/更新并启用 aurora-core（借助 Code Snippets）
   python3 aurora_setup.py configure                   # WooCommerce 设置：USD / 迪拜 / 关闭配送
   python3 aurora_setup.py import aurora_products_full.csv --dry-run   # 先预览字段映射
   python3 aurora_setup.py import aurora_products_full.csv             # 正式导入（按 SKU 去重，可重复跑）
@@ -16,7 +17,7 @@
   python3 aurora_setup.py images --urls temp.csv      # 临时网图（sku,url），仅供内部预览
   python3 aurora_setup.py images --clear-temp         # 临时图全部换回品牌图
   python3 aurora_setup.py menu                        # 创建主导航
-  python3 aurora_setup.py cleanup                     # 停用 YITH / Click to Chat / PayPal（不在 all 里）
+  python3 aurora_setup.py cleanup                     # 停用 YITH 两个插件 / Click to Chat / PayPal（不在 all 里）
   python3 aurora_setup.py all aurora_products_full.csv
 """
 
@@ -85,7 +86,7 @@ MENU = [
 ]
 
 # cleanup 命令会停用的插件（功能已由 aurora-core 提供，或询价模式用不到）
-REDUNDANT_PLUGINS = ["yith-woocommerce-wishlist", "click-to-chat-for-whatsapp",
+REDUNDANT_PLUGINS = ["yith-woocommerce-wishlist", "yith-woocommerce-request-a-quote", "click-to-chat-for-whatsapp",
                      "woocommerce-paypal-payments"]
 
 WC_SETTINGS = {
@@ -153,6 +154,22 @@ class WP:
         except urllib.error.URLError as e:
             raise SystemExit(f"✗ 连接失败 {url}: {e.reason}")
 
+    def get_or_none(self, path, params=None):
+        """GET，资源不存在（404）时返回 None 而不是退出。"""
+        url = f"{self.site}/wp-json/{path.lstrip('/')}"
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        r = urllib.request.Request(url, method="GET", headers=self.headers)
+        try:
+            with urllib.request.urlopen(r, timeout=120) as resp:
+                return json.loads(resp.read().decode() or "null")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise SystemExit(f"✗ GET {path} → HTTP {e.code}\n{e.read().decode(errors='replace')[:600]}")
+        except urllib.error.URLError as e:
+            raise SystemExit(f"✗ 连接失败 {url}: {e.reason}")
+
     def upload(self, file_path, filename, alt):
         with open(file_path, "rb") as f:
             raw = f.read()
@@ -188,7 +205,56 @@ def cmd_check(wp):
     names = sorted(p.get("plugin", "").split("/")[0] for p in status.get("active_plugins", []))
     print("  已启用插件：" + ", ".join(names))
     if "aurora-core" not in names:
-        print("! 还没启用 aurora-core 插件 —— 请在后台 插件 → 上传 aurora-core.zip 并启用")
+        print("! 还没启用 aurora-core 插件 —— 运行 install-plugin 自动安装")
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PLUGIN_ZIP = os.path.join(SCRIPT_DIR, "..", "dist", "aurora-core.zip")
+PLUGIN_FILE = "aurora-core/aurora-core"
+
+
+def plugin_active(wp):
+    info = wp.get_or_none(f"wp/v2/plugins/{PLUGIN_FILE}", {"_fields": "status,version"})
+    return bool(info) and info.get("status") == "active"
+
+
+def cmd_install_plugin(wp, dry_run=False):
+    """借助站点已装的 Code Snippets：临时建一个只有管理员能调用的安装接口，
+    用它安装并启用 dist/aurora-core.zip（已安装则覆盖更新），完成后删除这个片段。"""
+    if not os.path.exists(PLUGIN_ZIP):
+        raise SystemExit(f"✗ 找不到插件包 {PLUGIN_ZIP}，先运行 scripts/build_zip.sh")
+    with open(PLUGIN_ZIP, "rb") as f:
+        payload = base64.b64encode(f.read()).decode()
+    with open(os.path.join(SCRIPT_DIR, "installer_snippet.php"), encoding="utf-8") as f:
+        code = f.read()
+    code = code.split("\n", 1)[1].replace("__AURORA_ZIP_BASE64__", payload)  # Code Snippets 不要 <?php 开头
+    if dry_run:
+        print(f"[dry-run] 将通过 Code Snippets 安装 aurora-core（插件包 {len(payload) * 3 // 4 // 1024} KB）")
+        return
+    if wp.get_or_none("code-snippets/v1/snippets") is None:
+        raise SystemExit("✗ 站点没有启用 Code Snippets（或其接口不可用），无法自动安装。"
+                         "请在后台 插件 → 安装插件 → 上传插件，手动上传 dist/aurora-core.zip")
+    snippet, _ = wp.req("POST", "code-snippets/v1/snippets", {
+        "name": "Aurora 一次性安装器（会自动删除）",
+        "desc": "aurora_setup.py install-plugin 临时创建，安装完成后自动删除。",
+        "code": code,
+        "scope": "global",
+        "active": True,
+    })
+    sid = snippet["id"]
+    try:
+        if not snippet.get("active"):
+            wp.req("POST", f"code-snippets/v1/snippets/{sid}", {"active": True})
+        res, _ = wp.req("POST", "aurora-install/v1/run", {})
+        print(f"✓ aurora-core 已安装{'并启用' if res.get('active') else '，但未能启用'}")
+    finally:
+        try:
+            wp.req("DELETE", f"code-snippets/v1/snippets/{sid}")
+            print("✓ 已删除临时安装片段")
+        except SystemExit as e:
+            print(f"! 临时安装片段（ID {sid}）删除失败，请到后台 Snippets 里手动删除：{e}")
+    if not plugin_active(wp):
+        raise SystemExit("✗ 安装后检查发现 aurora-core 没有处于启用状态，请到后台 插件 页面查看")
 
 
 def cmd_configure(wp, dry_run=False):
@@ -349,8 +415,10 @@ BACKUP_DIR = os.path.join(CONTENT_DIR, "backup")
 
 
 def cmd_pages(wp, dry_run=False):
-    """创建/更新 Aurora 页面。同 slug 的页面如果不是本脚本建的（没有标记），
+    """创建/更新 Aurora 页面（页面里的短代码依赖 aurora-core，所以插件没启用时拒绝执行）。同 slug 的页面如果不是本脚本建的（没有标记），
     先把原页面完整备份到 content/backup/，再把原页面 slug 改成「-old」（内容不动），然后新建。"""
+    if not dry_run and not plugin_active(wp):
+        raise SystemExit("✗ aurora-core 插件还没启用，页面里的短代码会原样显示给访客。先运行 install-plugin")
     ids = {}
     for slug, title, filename in PAGES:
         with open(os.path.join(CONTENT_DIR, "pages", filename), encoding="utf-8") as f:
@@ -514,6 +582,15 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
     print(f"✓ 实拍图 {counts['photo']} 款，临时图 {counts['temp'] - errors} 款，品牌图 {counts['brand']} 款")
 
 
+def cmd_preview_link(wp):
+    data, _ = wp.req("GET", "wp/v2/settings", params={"_fields": "aurora_preview_key"})
+    key = (data or {}).get("aurora_preview_key")
+    if not key:
+        print("! 读不到预览密钥（aurora-core 未启用或版本过旧）")
+        return
+    print(f"✓ 预览分享链接（内部预览模式下外人用它也能看网站，只发给信任的人）：\n  {wp.site}/?aurora_preview={key}")
+
+
 def cmd_menu(wp, dry_run=False):
     if dry_run:
         print("[dry-run] 主导航：" + " / ".join(t for t, _ in MENU))
@@ -542,7 +619,8 @@ def cmd_cleanup(wp, dry_run=False):
 
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
-    ap.add_argument("command", choices=["check", "configure", "import", "images", "pages", "menu", "cleanup", "all"])
+    ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
+                                       "preview-link", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -572,6 +650,8 @@ def main():
 
     if args.command in ("check", "all"):
         cmd_check(wp)
+    if args.command in ("install-plugin", "all"):
+        cmd_install_plugin(wp, args.dry_run)
     if args.command in ("configure", "all"):
         cmd_configure(wp, args.dry_run)
     if args.command in ("import", "all"):
@@ -584,6 +664,8 @@ def main():
         cmd_menu(wp, args.dry_run)
     if args.command == "cleanup":
         cmd_cleanup(wp, args.dry_run)
+    if args.command in ("preview-link", "all") and not args.dry_run:
+        cmd_preview_link(wp)
 
 
 if __name__ == "__main__":

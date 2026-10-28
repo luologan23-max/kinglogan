@@ -2,16 +2,20 @@
 用法：python3 tests/mock_wc_server.py 8765   （运行后把 AURORA_SITE 指向 http://127.0.0.1:8765）
 """
 import base64
+import io
+import re
+import zipfile
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 AUTH = "Basic " + base64.b64encode(b"tester:abcd efgh ijkl").decode()
-state = {"products": [], "cats": [], "settings": {"show_on_front": "page", "page_on_front": 7}, "menus": [], "menu_items": [], "media": [], "next": 100,
+state = {"products": [], "cats": [], "settings": {"show_on_front": "page", "page_on_front": 7}, "menus": [], "menu_items": [], "media": [], "snippets": {}, "next": 100,
          # 预置一个用户自己做的首页，用来测试「不覆盖」逻辑
          "pages": [{"id": 7, "slug": "home", "title": "Home", "content": "<p>用户原有首页</p>", "status": "publish"}],
          "plugins": [{"plugin": "yith-woocommerce-wishlist/init", "name": "YITH Wishlist", "status": "active"},
+                     {"plugin": "yith-woocommerce-request-a-quote/init", "name": "YITH Request a Quote", "status": "active"},
                      {"plugin": "elementor/elementor", "name": "Elementor", "status": "active"}]}
 
 
@@ -87,13 +91,42 @@ class H(BaseHTTPRequestHandler):
         if p == "wp/v2/menu-items":
             state["menu_items"].append(body)
             return self.send(201, dict(body, id=new_id()))
+        # Code Snippets REST 接口（简化）
+        if p == "code-snippets/v1/snippets":
+            if method == "GET":
+                return self.send(200, list(state["snippets"].values()))
+            sn = dict(body, id=new_id())
+            state["snippets"][sn["id"]] = sn
+            return self.send(201, sn)
+        m = re.fullmatch(r"code-snippets/v1/snippets/(\d+)", p)
+        if m:
+            sid = int(m.group(1))
+            if sid not in state["snippets"]:
+                return self.send(404, {"code": "not_found"})
+            if method == "DELETE":
+                return self.send(200, state["snippets"].pop(sid))
+            state["snippets"][sid].update(body)
+            return self.send(200, state["snippets"][sid])
+        # 安装片段注册的路由：只有存在已启用的安装片段时才可用，并校验其中的 zip 确实含有插件
+        if p == "aurora-install/v1/run":
+            sn = next((x for x in state["snippets"].values() if x.get("active") and "aurora-install/v1" in x["code"]), None)
+            if not sn:
+                return self.send(404, {"code": "rest_no_route"})
+            b64 = re.search(r"base64_decode\( '([A-Za-z0-9+/=]+)' \)", sn["code"]).group(1)
+            names = zipfile.ZipFile(io.BytesIO(base64.b64decode(b64))).namelist()
+            if "aurora-core/aurora-core.php" not in names:
+                return self.send(500, {"code": "bad_zip", "names": names})
+            state["plugins"] = [x for x in state["plugins"] if x["plugin"] != "aurora-core/aurora-core"]
+            state["plugins"].append({"plugin": "aurora-core/aurora-core", "name": "Aurora Core", "status": "active"})
+            return self.send(200, {"installed": True, "active": True})
         if p == "wp/v2/plugins":
             return self.send(200, state["plugins"])
         if p.startswith("wp/v2/plugins/"):
             for pl in state["plugins"]:
                 if pl["plugin"] == p[len("wp/v2/plugins/"):]:
-                    pl.update(body)
+                    pl.update(body or {})
                     return self.send(200, pl)
+            return self.send(404, {"code": "rest_plugin_not_found"})
         if p == "wc/v3/products":
             page, per = int(q.get("page", 1)), int(q.get("per_page", 10))
             return self.send(200, state["products"][(page - 1) * per: page * per], max(1, -(-len(state["products"]) // per)))
@@ -129,7 +162,8 @@ class H(BaseHTTPRequestHandler):
                     return self.send(200, pg)
         if p == "wp/v2/settings":
             if method == "GET":
-                return self.send(200, {k: state["settings"].get(k) for k in ("show_on_front", "page_on_front")})
+                return self.send(200, {k: state["settings"].get(k) for k in ("show_on_front", "page_on_front")}
+                                 | {"aurora_preview_key": "mockkey123"})
             state["settings"].update(body)
             return self.send(200, body)
         if p == "__state":
@@ -141,6 +175,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.route("POST")
+
+    def do_DELETE(self):
+        self.route("DELETE")
 
 
 if __name__ == "__main__":

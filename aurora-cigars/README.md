@@ -45,6 +45,16 @@
 - **没填价格的产品**显示「价格请询价」，询价消息改为「请告知价格与库存」
 - **后台设置**：WooCommerce → Aurora 设置，可以改 WhatsApp 号码、年龄、不发货地区、物流文案
 
+## 一键上线（推荐，在自己的 Mac 上运行）
+
+打开「终端」，粘贴下面这条命令（把密码换成你在后台生成的 Application Password）：
+
+```bash
+cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_all.sh
+```
+
+`run_all.sh` 会依次完成这些：安装并启用插件（借助站点上的 Code Snippets 临时建一个只有管理员能调用的安装接口，装完自动删除）→ 店铺设置 → 停用多余插件 → 导入 80 款 → 配品牌图 → 建页面（原有同名页面先备份再改名，内容不动）→ 建导航 → 输出预览分享链接。
+
 ## 上线步骤
 
 1. **生成新的 Application Password**：WP 后台 → 用户 → 个人资料 → 拉到底部的 Application Passwords。旧的那个请删掉。同时记下页面顶部的「用户名」（不是显示名称）
