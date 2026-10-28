@@ -24,11 +24,15 @@
 import argparse
 import base64
 import csv
+import difflib
 import http.cookiejar
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -182,7 +186,7 @@ class WP:
     def upload(self, file_path, filename, alt):
         with open(file_path, "rb") as f:
             raw = f.read()
-        ctype = "image/png" if filename.lower().endswith(".png") else "image/jpeg"
+        ctype = {".png": "image/png", ".webp": "image/webp"}.get(os.path.splitext(filename)[1].lower(), "image/jpeg")
         media, _ = self.req("POST", "wp/v2/media", raw=raw, extra_headers={
             "Content-Type": ctype,
             "Content-Disposition": f'attachment; filename="{filename}"',
@@ -474,7 +478,128 @@ def cmd_pages(wp, dry_run=False, replace=False):
 
 
 IMAGE_DIR = os.path.join(CONTENT_DIR, "images")
-PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")
+PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+ROMAN = {"i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii"}
+NAME_META = ("aurora_name_en", "aurora_name_cn", "product_name_zh")
+MATCH_MIN, MATCH_MARGIN = 0.86, 0.04
+
+
+def name_tokens(text):
+    """名称比对用的词：去重音、小写，No.2 / No2 / No 2 统一，连续的中文算一个词。
+    罗马数字里误打成小写 L 的（Siglo Ill）按 III 处理；连续重复的词只算一次（Punch Punch Punch）。"""
+    s = unicodedata.normalize("NFKD", str(text or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = re.sub(r"\bno\.?\s*(?=\d)", "no ", s)
+    out = []
+    for t in re.findall(r"[a-z]+|\d+|[\u3400-\u9fff]+", s):
+        if re.fullmatch(r"[il]{2,4}", t) and "l" in t:
+            t = t.replace("l", "i")
+        if not out or out[-1] != t:
+            out.append(t)
+    return out
+
+
+def name_score(a, b):
+    """两个名称的相似度（0–1）。数字和罗马数字必须完全一致：No.1 ≠ No.2，Siglo VI ≠ Siglo V。"""
+    strict = lambda t: sorted(x for x in t if x.isdigit() or x in ROMAN)
+    if not a or not b or strict(a) != strict(b):
+        return 0.0
+    ka, kb = "".join(a), "".join(b)
+    if ka == kb:
+        return 1.0
+    sa, sb = set(a), set(b)
+    if (sa <= sb or sb <= sa) and min(len(sa), len(sb)) >= 2:
+        return 0.9  # 一边多了品牌名或规格词，例如「Behike 52」对「Cohiba Behike BHK 52」
+    return difflib.SequenceMatcher(None, ka, kb).ratio()
+
+
+def match_photos(photo_dir, products):
+    """实拍图按文件名对应产品：SKU、产品名、英文名、中文名都可以，不分大小写、重音、空格和符号。
+    同一款多张图写成「名称 2」「名称-2」「名称 (2)」，第一张做主图，其余进图集。
+    同一型号既有上架款又有草稿（重复款）时只配给上架的；两款以上同样接近时不配，列为「不确定」。
+    返回 ({产品 id: [文件]}, 对照表行, 未匹配的文件, 不确定的文件)。"""
+    def texts(p):
+        meta = {m["key"]: m["value"] for m in p.get("meta_data", []) if isinstance(m.get("value"), str)}
+        return [t for t in [p.get("sku"), p.get("name"), p.get("aurora_name_cn")] + [meta.get(k) for k in NAME_META] if t]
+
+    live = [p for p in products if p.get("status", "publish") == "publish"]
+    keys = [(p, name_tokens(t)) for p in products for t in texts(p)]
+    # 已改为草稿的重复款：它的名字（例如中文名）也指向上架的那一款
+    for p in products:
+        en = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_name_en"), "")
+        if p in live or not en:
+            continue
+        score, twin = max(((name_score(name_tokens(en), name_tokens(q["name"])), q) for q in live if q is not p),
+                          key=lambda x: x[0], default=(0, None))
+        if twin and score >= DEDUPE_MIN:
+            keys += [(twin, name_tokens(t)) for t in texts(p) if t != p.get("sku")]
+
+    def best_products(text):
+        tokens = name_tokens(text)
+        scores, hit = {}, {}
+        for p, k in keys:
+            sc = name_score(tokens, k)
+            if sc > scores.get(p["id"], -1):
+                scores[p["id"]], hit[p["id"]] = sc, "".join(k)
+        # 上架的产品优先：上架款里有对得上的，就不考虑草稿（下架的重复款）
+        live_ids = {p["id"] for p in live}
+        if any(sc >= MATCH_MIN for pid, sc in scores.items() if pid in live_ids):
+            scores = {pid: sc for pid, sc in scores.items() if pid in live_ids}
+        ranked = sorted(scores.items(), key=lambda x: -x[1])
+        if not ranked or ranked[0][1] < MATCH_MIN:
+            return None, 0.0
+        best = ranked[0][1]
+        top = [pid for pid, sc in ranked if sc >= best - MATCH_MARGIN]
+        # 站点里有完全同名的两款（例如两个 Cohiba Siglo VI）时两款都配；否则只接受唯一的一款
+        same = all(scores[pid] == best for pid in top) and len({hit[pid] for pid in top}) == 1
+        return (top if len(top) == 1 or same else []), best  # 有两款以上分数接近 → 不确定，留给人工核对
+
+    groups, rows, unmatched, unsure = {}, [], [], []
+    for name in sorted(os.listdir(photo_dir)):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in PHOTO_EXT or name.startswith("."):
+            continue
+        tries = [(stem, 1)]
+        m = re.match(r"^(.*?)[\s_\-]*\(?(\d{1,2})\)?$", stem)
+        if m and m.group(1).strip():
+            tries.append((m.group(1), int(m.group(2))))  # 末尾的序号当作图集顺序
+        result = None
+        for text, order in tries:
+            pids, score = best_products(text)
+            if pids:
+                result = (pids, order, score)
+                break
+            if pids == []:
+                result = ([], order, score)
+        if not result:
+            unmatched.append(name)
+            rows.append({"file": name, "status": "未匹配"})
+            continue
+        pids, order, score = result
+        if not pids:
+            unsure.append(name)
+            rows.append({"file": name, "status": "不确定（有多个相近的产品）"})
+            continue
+        for pid in pids:
+            groups.setdefault(pid, []).append((order, os.path.join(photo_dir, name)))
+            p = next(x for x in products if x["id"] == pid)
+            rows.append({"file": name, "status": "已匹配", "product_id": pid, "sku": p.get("sku", ""),
+                         "product": p["name"], "order": order, "score": round(score, 2)})
+    return {k: [f for _, f in sorted(v)] for k, v in groups.items()}, rows, unmatched, unsure
+
+
+def prepare_photo(path):
+    """Mac 上用系统自带的 sips 把 HEIC 转成 JPG，大于 2.5MB 的图缩到长边 2000px；其他情况原样上传。"""
+    ext = os.path.splitext(path)[1].lower()
+    heic = ext in (".heic", ".heif")
+    if (heic or os.path.getsize(path) > 2.5 * 1024 * 1024) and shutil.which("sips"):
+        out = os.path.join(tempfile.mkdtemp(prefix="aurora-photo-"), "photo.jpg")
+        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85", "-Z", "2000", path, "--out", out],
+                       check=True, capture_output=True)
+        return out, ".jpg"
+    if heic:
+        raise SystemExit(f"✗ {os.path.basename(path)} 是 HEIC 格式，这台电脑没有 sips，无法转换成 JPG")
+    return path, ext
 
 
 def brand_media(wp, dry_run):
@@ -500,27 +625,6 @@ def brand_media(wp, dry_run):
     return ids
 
 
-def sku_photos(photo_dir, skus):
-    """实拍图按 SKU 命名：COH-ROB-25.jpg 为主图，COH-ROB-25-2.jpg、-3… 为图集（不区分大小写）。
-    先整名匹配 SKU，再尝试去掉末尾的「-序号」，所以 SKU 本身以数字结尾也不会认错。"""
-    groups, unmatched = {}, []
-    if not photo_dir:
-        return groups, unmatched
-    for name in sorted(os.listdir(photo_dir)):
-        stem, ext = os.path.splitext(name)
-        if ext.lower() not in PHOTO_EXT:
-            continue
-        key, order = stem.upper(), 1
-        if key not in skus:
-            base, _, num = key.rpartition("-")
-            if base in skus and num.isdigit():
-                key, order = base, int(num)
-            else:
-                unmatched.append(name)
-                continue
-        groups.setdefault(key, []).append((order, os.path.join(photo_dir, name)))
-    return {k: [p for _, p in sorted(v)] for k, v in groups.items()}, unmatched
-
 
 def read_image_urls(path):
     """临时图清单 CSV：两列 sku,url（有表头）。返回 {SKU: [url, …]}，同一 SKU 多行即图集。"""
@@ -544,19 +648,37 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
     if photo_dir and not os.path.isdir(photo_dir):
         raise SystemExit(f"✗ 找不到图片目录：{photo_dir}")
     brand_ids = brand_media(wp, dry_run)
-    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,images,categories,meta_data", "status": "any"})
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,images,categories,meta_data",
+                                             "status": "any"})
     skus = {(p.get("sku") or "").upper() for p in products if p.get("sku")}
-    photos, unmatched = sku_photos(photo_dir, skus)
+    photos = {}
     if photo_dir:
-        print(f"实拍图目录：匹配 {len(photos)} 个 SKU")
+        photos, rows, unmatched, unsure = match_photos(photo_dir, products)
+        has_photo = {p["id"] for p in products if image_source(p) == "photo"}
+        skipped = [pid for pid in photos if pid in has_photo]
+        photos = {pid: f for pid, f in photos.items() if pid not in has_photo}
+        total = len([r for r in rows if r["status"] != "已匹配"]) + len({r["file"] for r in rows if r["status"] == "已匹配"})
+        print(f"实拍图 {total} 张：对上 {len(photos) + len(skipped)} 款产品，未匹配 {len(unmatched)} 张，不确定 {len(unsure)} 张")
+        if skipped:
+            print(f"· 其中 {len(skipped)} 款已经有实拍图，这次不重复上传")
         for name in unmatched:
-            print(f"! 未匹配任何 SKU，跳过：{name}")
+            print(f"! 未匹配：{name}")
+        for name in unsure:
+            print(f"? 不确定：{name}")
+        report = os.path.expanduser("~/Desktop/aurora-实拍图对照表.csv")
+        report = report if os.path.isdir(os.path.dirname(report)) else os.path.abspath("aurora-实拍图对照表.csv")
+        with open(report, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, ["file", "status", "product_id", "sku", "product", "order", "score"])
+            w.writeheader()
+            w.writerows(rows)
+        print(f"· 对照表：{report}（可以用 Numbers / Excel 打开核对）")
     web = read_image_urls(url_csv) if url_csv else {}
     if url_csv:
         print(f"临时图清单：{len(web)} 个 SKU" + "".join(f"\n! 清单里的 SKU 不存在：{k}" for k in web if k not in skus))
     if dry_run:
-        for sku, files in photos.items():
-            print(f"[dry-run] 实拍 {sku} ← {', '.join(os.path.basename(f) for f in files)}")
+        by_id = {p["id"]: p for p in products}
+        for pid, files in photos.items():
+            print(f"[dry-run] {by_id[pid]['name']} ← {', '.join(os.path.basename(f) for f in files)}")
         for sku, links in web.items():
             print(f"[dry-run] 临时 {sku} ← {links[0]}" + (f" 等 {len(links)} 张" if len(links) > 1 else ""))
         return
@@ -577,14 +699,26 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
     def tagged(p, images, source):
         return {"id": p["id"], "images": images, "meta_data": [{"key": "aurora_image_source", "value": source}]}
 
+    uploaded = {}  # 同一个文件配给多款时只上传一次
+
+    def upload_photo(path, p, n):
+        if path not in uploaded:
+            src, ext = prepare_photo(path)
+            base = re.sub(r"[^A-Za-z0-9-]+", "-", p.get("sku") or f"product-{p['id']}").strip("-")
+            uploaded[path] = wp.upload(src, f"{base}{'' if n == 1 else f'-{n}'}{ext}", p["name"])
+        return uploaded[path]
+
     local, remote = [], []  # 远程图片要服务器下载，分小批提交
     counts = {"photo": 0, "temp": 0, "brand": 0}
+    done = 0
     for p in products:
         sku, src = (p.get("sku") or "").upper(), image_source(p)
-        if sku in photos:
-            ids = [wp.upload(f, os.path.basename(f), p["name"]) for f in photos[sku]]
+        if p["id"] in photos:
+            ids = [upload_photo(f, p, n) for n, f in enumerate(photos[p["id"]], 1)]
             local.append(tagged(p, [{"id": i} for i in ids], "photo"))
             counts["photo"] += 1
+            done += 1
+            print(f"  实拍图 {done}/{len(photos)}：{p['name']}")
         elif sku in web and src != "photo":
             remote.append(tagged(p, [{"src": u, "alt": p["name"]} for u in web[sku]], "temp"))
             counts["temp"] += 1
@@ -762,26 +896,24 @@ def cmd_restore_pages(wp, dry_run=False):
         print(f"✓ 网站首页已恢复为原来的页面（ID {restored['home']}）")
 
 
-def model_key(name):
-    """型号比对用：去重音、统一 No. 写法，只保留字母数字。"""
-    s = unicodedata.normalize("NFKD", str(name or ""))
-    s = "".join(c for c in s if not unicodedata.combining(c)).lower().replace("no.", "no ")
-    return re.sub(r"[^a-z0-9]+", "", s)
+
+DEDUPE_MIN = 0.9
 
 
 def cmd_dedupe(wp, dry_run=False):
-    """标准目录里与站点原有产品同型号的那部分改为草稿（不删除，后台可一键恢复）。"""
+    """标准目录里与站点原有产品同型号的那部分改为草稿（不删除，后台可一键恢复）。
+    型号按名称比对：单复数、少写或多写品牌/规格词（BHK、Cabinet）、常见拼写差异都算同一款，数字必须一致。"""
     with open(os.path.join(CONTENT_DIR, "catalog.csv"), newline="", encoding="utf-8") as f:
         ours = {r["SKU"] for r in csv.DictReader(f)}
     products = wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,name,sku,status,meta_data"})
-    existing = {model_key(p["name"]): p for p in products if p.get("sku") not in ours}
+    existing = [(p, name_tokens(p["name"])) for p in products if p.get("sku") not in ours]
     dups = []
     for p in products:
         if p.get("sku") not in ours or p.get("status") != "publish":
             continue
-        en = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_name_en"), "")
-        twin = existing.get(model_key(en))
-        if twin:
+        en = name_tokens(next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_name_en"), ""))
+        score, twin = max(((name_score(en, k), q) for q, k in existing), key=lambda x: x[0], default=(0, None))
+        if twin and score >= DEDUPE_MIN:
             dups.append((p, twin))
     print(f"标准目录中与原有产品重复的型号：{len(dups)} 款")
     for p, twin in dups:
@@ -858,7 +990,7 @@ def main():
                     help="手动指定字段映射，例如 --map price=USD售价")
     ap.add_argument("--dry-run", action="store_true", help="只预览，不写入网站")
     ap.add_argument("--limit", type=int, help="只导入前 N 行（测试用）")
-    ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 命名")
+    ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 或产品名命名")
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")

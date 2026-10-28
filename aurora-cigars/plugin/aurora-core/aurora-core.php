@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.2.1
+ * Version: 1.2.2
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.2.1' );
+define( 'AURORA_CORE_VERSION', '1.2.2' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -275,6 +275,17 @@ add_action( 'template_redirect', function () {
 		wp_safe_redirect( $target, 302 );
 		exit;
 	}
+} );
+
+// 站点片段把产品中文名存在 _name_cn 里，WooCommerce 接口默认不返回下划线开头的字段。
+// 实拍图按中文文件名配图时需要它，这里只读地加到产品接口里。
+add_action( 'rest_api_init', function () {
+	register_rest_field( 'product', 'aurora_name_cn', array(
+		'get_callback' => function ( $p ) {
+			return (string) get_post_meta( $p['id'], '_name_cn', true );
+		},
+		'schema'       => array( 'type' => 'string', 'context' => array( 'view', 'edit' ), 'readonly' => true ),
+	) );
 } );
 
 /* -------------------------------------------------------------------------
