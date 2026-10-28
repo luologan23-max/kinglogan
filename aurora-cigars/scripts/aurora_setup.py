@@ -1056,9 +1056,13 @@ def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.z
         raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
     products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,meta_data", "status": "any"})
     _, rows, unmatched, unsure = match_photos(photo_dir, products)
+    has_photo = {p.get("sku") for p in products if image_source(p) == "photo"}  # 重新运行时不重复上传
     mapping = []
     for r in rows:
-        if r["status"] == "已匹配":
+        if r["status"] == "已匹配" and r["sku"] in has_photo:
+            mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"], "role": "", "order": r["order"],
+                            "status": "已有实拍图", "note": "之前已经上传过，这次跳过"})
+        elif r["status"] == "已匹配":
             mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"],
                             "role": "主图" if r["order"] == 1 else "其他", "order": r["order"], "status": "确认",
                             "note": f"按文件名自动匹配（相似度 {r['score']}），待人工复核"})
@@ -1077,7 +1081,8 @@ def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.z
             z.write(path, "auto-mapping.csv")
     files = {m["file"] for m in mapping}
     print(f"照片 {len(files)} 张：自动对上 {len({m['file'] for m in mapping if m['status'] == '确认'})} 张，"
-          f"不确定 {len(unsure)} 张，对不上 {len(unmatched)} 张（这两类不上传）")
+          f"之前已上传 {len({m['file'] for m in mapping if m['status'] == '已有实拍图'})} 张，"
+          f"不确定 {len(unsure)} 张，对不上 {len(unmatched)} 张（后三类这次不上传）")
     print(f"· 对照表：{path}")
     if any(m["status"] == "确认" for m in mapping):
         cmd_photo_apply(wp, photo_dir, path)
