@@ -601,18 +601,73 @@ def match_photos(photo_dir, products):
     return {k: [f for _, f in sorted(v)] for k, v in groups.items()}, rows, unmatched, unsure
 
 
+STRIP_RATIO = 2  # 长宽比超过 2 的横条图（单支雪茄的侧面照）
+PAD = 1.08  # 横条图放到正方形画布上时两端各留约 4% 白边
+
+
+def image_size(path):
+    """图片宽高，读不出时返回 (None, None)。Mac 上用系统自带的 sips，否则用 Pillow。"""
+    if shutil.which("sips"):
+        out = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", path], capture_output=True, text=True).stdout
+        w, h = re.search(r"pixelWidth:\s*(\d+)", out), re.search(r"pixelHeight:\s*(\d+)", out)
+        return (int(w.group(1)), int(h.group(1))) if w and h else (None, None)
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        return None, None
+
+
 def prepare_photo(path):
-    """Mac 上用系统自带的 sips 把 HEIC 转成 JPG，大于 2.5MB 的图缩到长边 2000px；其他情况原样上传。"""
+    """生成上传用的副本，原图不动：HEIC 转 JPG，大于 2.5MB 的重新压缩（长边最多 2000px）；
+    单支雪茄的横条图放到白底正方形画布正中，网站按正方形裁切缩略图时才能显示整支雪茄。其他情况原样上传。"""
     ext = os.path.splitext(path)[1].lower()
     heic = ext in (".heic", ".heif")
-    if (heic or os.path.getsize(path) > 2.5 * 1024 * 1024) and shutil.which("sips"):
-        out = os.path.join(tempfile.mkdtemp(prefix="aurora-photo-"), "photo.jpg")
-        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85", "-Z", "2000", path, "--out", out],
-                       check=True, capture_output=True)
+    w, h = image_size(path)
+    strip = bool(w and h and max(w, h) > STRIP_RATIO * min(w, h))
+    if not (heic or strip or os.path.getsize(path) > 2.5 * 1024 * 1024):
+        return path, ext
+    longest, limit = max(w or 0, h or 0), (1800 if strip else 2000)  # 横条图补边后长边约为 1.08 倍
+    out = os.path.join(tempfile.mkdtemp(prefix="aurora-photo-"), "photo.jpg")
+    if shutil.which("sips"):
+        cmd = ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85"]
+        if longest > limit:  # 只缩小不放大
+            cmd += ["-Z", str(limit)]
+        subprocess.run(cmd + [path, "--out", out], check=True, capture_output=True)
+        if strip:
+            side = str(round(max(image_size(out)) * PAD))
+            subprocess.run(["sips", "-p", side, side, "--padColor", "FFFFFF", "-s", "formatOptions", "85", out, "--out", out],
+                           check=True, capture_output=True)
         return out, ".jpg"
-    if heic:
-        raise SystemExit(f"✗ {os.path.basename(path)} 是 HEIC 格式，这台电脑没有 sips，无法转换成 JPG")
-    return path, ext
+    try:
+        from PIL import Image
+    except ImportError:
+        if heic:
+            raise SystemExit(f"✗ {os.path.basename(path)} 是 HEIC 格式，这台电脑没有 sips，无法转换成 JPG")
+        return path, ext
+    with Image.open(path) as im:
+        im = im.convert("RGBA")
+        flat = Image.new("RGB", im.size, "white")  # 透明背景铺白
+        flat.paste(im, mask=im.getchannel("A"))
+        if longest > limit:
+            flat.thumbnail((limit, limit))
+        if strip:
+            side = round(max(flat.size) * PAD)
+            canvas = Image.new("RGB", (side, side), "white")
+            canvas.paste(flat, ((side - flat.width) // 2, (side - flat.height) // 2))
+            flat = canvas
+        flat.save(out, "JPEG", quality=85)
+    return out, ".jpg"
+
+
+def find_photo(photo_dir, rel, index):
+    """对照表里的照片：先按相对路径找；拖进多个文件夹时汇总目录多了一层文件夹名，再按文件名找（只有一个同名文件时才算）。"""
+    full = os.path.join(photo_dir, rel)
+    if os.path.isfile(full):
+        return full
+    hits = index.get(unicodedata.normalize("NFC", os.path.basename(rel)), [])
+    return os.path.join(photo_dir, hits[0]) if len(hits) == 1 else None
 
 
 def brand_media(wp, dry_run):
@@ -657,7 +712,10 @@ SAVE_BATCH = 10  # 网站每保存一款产品都要通知 Google / Pinterest �
 def save_products(wp, items, label="保存"):
     """分小批保存产品修改，每批后显示进度。重新运行各命令时已改好的会被跳过，中途断了可以直接重跑。"""
     for i in range(0, len(items), SAVE_BATCH):
-        wp.req("POST", "wc/v3/products/batch", {"update": items[i:i + SAVE_BATCH]})
+        res, _ = wp.req("POST", "wc/v3/products/batch", {"update": items[i:i + SAVE_BATCH]})
+        for it in (res or {}).get("update", []):
+            if it.get("error"):
+                print(f"! 产品 {it.get('id')} 没有保存成功：{it['error'].get('message')}")
         if len(items) > SAVE_BATCH:
             print(f"  已{label} {min(i + SAVE_BATCH, len(items))}/{len(items)}")
 
@@ -770,9 +828,7 @@ def photo_info(path):
     width = height = None
     thumb = None
     if shutil.which("sips"):
-        out = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", path], capture_output=True, text=True).stdout
-        w, h = re.search(r"pixelWidth:\s*(\d+)", out), re.search(r"pixelHeight:\s*(\d+)", out)
-        width, height = (int(w.group(1)) if w else None), (int(h.group(1)) if h else None)
+        width, height = image_size(path)
         tmp = os.path.join(tempfile.mkdtemp(prefix="aurora-thumb-"), "t.jpg")
         r = subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75", "-Z", "1000", path, "--out", tmp],
                            capture_output=True)
@@ -879,45 +935,72 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     held = len(rows) - len(todo)
     products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,status,images,meta_data", "status": "any"})
     by_sku = {(p.get("sku") or "").upper(): p for p in products if p.get("sku")}
+    index = {}
+    for rel in walk_photos(photo_dir):
+        index.setdefault(unicodedata.normalize("NFC", os.path.basename(rel)), []).append(rel)
     plan, problems = {}, []
     for r in todo:
         p = by_sku.get(r["sku"].strip().upper())
-        full = os.path.join(photo_dir, r["file"])
+        full = find_photo(photo_dir, r["file"], index)
         if not p:
             problems.append(f"网站上没有 SKU {r['sku']}（{r['file']}）")
-        elif not os.path.isfile(full):
+        elif not full:
             problems.append(f"找不到照片 {r['file']}")
         else:
             key = (PHOTO_ROLES.get(r.get("role", "").strip(), 4), int(r.get("order") or 1))
             plan.setdefault(p["id"], (p, []))[1].append((key, full, r))
     print(f"对照表 {len(rows)} 行：确认 {len(todo)} 行，待确认/不上传 {held} 行（这次不处理）")
-    print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图")
     for msg in problems:
         print(f"! {msg}")
     if problems:
         raise SystemExit("✗ 对照表和网站或照片文件夹对不上，先不上传。请把这几行发给 Claude。")
+    meta = lambda p, k: next((m["value"] for m in p.get("meta_data", []) if m["key"] == k), "")
+    files_of = lambda items: "|".join(os.path.basename(r["file"]) for _, _, r in items)
     for p, items in plan.values():
         items.sort(key=lambda x: x[0])
+    done_before = [pid for pid, (p, items) in plan.items()
+                   if image_source(p) == "photo" and meta(p, "aurora_photo_files") == files_of(items)]
+    for pid in done_before:  # 重新运行时，已经按同样照片配好的产品不再重复上传
+        del plan[pid]
+    print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图"
+          + (f"（另有 {len(done_before)} 款之前已配好，跳过）" if done_before else ""))
+    for p, items in plan.values():
         print(f"  {p['sku']:<14} {p['name']}：" + "，".join(f"{r.get('role') or '其他'} {os.path.basename(r['file'])}"
                                                        for _, _, r in items))
-    if dry_run:
+    if dry_run or not plan:
         return
     backup = save_backup([p for p, _ in plan.values()], "上传前")
     print(f"✓ 这些产品现有的图片已备份：{backup}")
-    uploaded, updates = {}, []
+    uploaded, pending, saved, failed = {}, [], 0, []
     for done, (p, items) in enumerate(plan.values(), 1):
         ids = []
-        for n, (_, full, _) in enumerate(items, 1):
-            if full not in uploaded:
-                src, ext = prepare_photo(full)
-                base = re.sub(r"[^A-Za-z0-9-]+", "-", p["sku"]).strip("-")
-                uploaded[full] = wp.upload(src, f"{base}{'' if n == 1 else f'-{n}'}{ext}", p["name"])
-            ids.append(uploaded[full])
-        updates.append({"id": p["id"], "images": [{"id": i} for i in ids],
-                        "meta_data": [{"key": "aurora_image_source", "value": "photo"}]})
+        try:
+            for n, (_, full, _) in enumerate(items, 1):
+                if full not in uploaded:
+                    src, ext = prepare_photo(full)
+                    base = re.sub(r"[^A-Za-z0-9-]+", "-", p["sku"]).strip("-")
+                    uploaded[full] = wp.upload(src, f"{base}{'' if n == 1 else f'-{n}'}{ext}", p["name"])
+                ids.append(uploaded[full])
+        except (SystemExit, OSError, subprocess.CalledProcessError) as e:  # 一款失败不影响其他款
+            failed.append(p)
+            print(f"! {p['sku']} {p['name']} 上传失败：{e}")
+            if len(failed) >= 5 and not saved and not pending:
+                print("✗ 前 5 款都上传失败，先停下。请把上面的报错截图发给 Claude。")
+                break
+            continue
+        pending.append({"id": p["id"], "images": [{"id": i} for i in ids],
+                        "meta_data": [{"key": "aurora_image_source", "value": "photo"},
+                                      {"key": "aurora_photo_files", "value": files_of(items)}]})
         print(f"  已上传 {done}/{len(plan)}：{p['name']}（{len(ids)} 张）")
-    save_products(wp, updates, "关联图片")
-    print(f"\n✓ 已更新 {len(updates)} 款产品，上传 {len(uploaded)} 张图片。需要撤销时运行：run_photos.sh restore {backup}")
+        if len(pending) == SAVE_BATCH or done == len(plan):  # 每 10 款保存一次，中途断了重跑会接着做
+            save_products(wp, pending, "关联图片")
+            saved, pending = saved + len(pending), []
+    if pending:
+        save_products(wp, pending, "关联图片")
+        saved += len(pending)
+    print(f"\n✓ 已更新 {saved} 款产品，上传 {len(uploaded)} 张图片。需要撤销时运行：run_photos.sh restore {backup}")
+    if failed:
+        print(f"! 有 {len(failed)} 款没有上传成功：" + "、".join(p["sku"] for p in failed) + "（重新运行同一条命令会只补这几款）")
 
 
 def cmd_photo_restore(wp, backup_json):
@@ -1052,55 +1135,6 @@ def cmd_mark_review(wp, dry_run=False):
         return
     save_products(wp, updates, "标记")
     print("✓ 已标记（只在内部预览模式下或管理员登录时显示红色）")
-
-
-def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.zip"):
-    """一次做完：按文件名自动对照，只上传唯一、确定的匹配；不确定和对不上的不上传，标为「待确认」列在对照表里。
-    对照表存到桌面并附进清点包，之后可以逐张核对；上传沿用 photo-apply（先备份、按顺序进图库、原图不动）。"""
-    if not photo_dir or not os.path.isdir(photo_dir):
-        raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
-    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,meta_data", "status": "any"})
-    _, rows, unmatched, unsure = match_photos(photo_dir, products)
-    has_photo = {p.get("sku") for p in products if image_source(p) == "photo"}  # 重新运行时不重复上传
-    import hashlib
-    first_of = {}  # 内容完全相同的照片（例如两个文件夹里各放了一份）只上传第一张
-    for r in rows:
-        if r["file"] not in first_of:
-            digest = hashlib.sha1(open(os.path.join(photo_dir, r["file"]), "rb").read()).hexdigest()
-            first_of[r["file"]] = first_of.setdefault(digest, r["file"])
-    mapping = []
-    for r in rows:
-        if first_of[r["file"]] != r["file"]:
-            mapping.append({"file": r["file"], "sku": r.get("sku", ""), "product": r.get("product", ""), "role": "",
-                            "order": r.get("order", ""), "status": "不上传", "note": f"与 {first_of[r['file']]} 内容完全相同"})
-        elif r["status"] == "已匹配" and r["sku"] in has_photo:
-            mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"], "role": "", "order": r["order"],
-                            "status": "已有实拍图", "note": "之前已经上传过，这次跳过"})
-        elif r["status"] == "已匹配":
-            mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"],
-                            "role": "主图" if r["order"] == 1 else "其他", "order": r["order"], "status": "确认",
-                            "note": f"按文件名自动匹配（相似度 {r['score']}），待人工复核"})
-        else:
-            mapping.append({"file": r["file"], "sku": "", "product": "", "role": "", "order": "", "status": "待确认",
-                            "note": "有两款以上同样接近的产品" if r["file"] in unsure else "文件名对不上任何产品"})
-    path = os.path.expanduser("~/Desktop/aurora-自动对照表.csv")
-    path = path if os.path.isdir(os.path.dirname(path)) else os.path.abspath("aurora-自动对照表.csv")
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, ["file", "sku", "product", "role", "order", "status", "note"])
-        w.writeheader()
-        w.writerows(mapping)
-    inv = os.path.expanduser(inventory_zip)
-    if os.path.isfile(inv):
-        with zipfile.ZipFile(inv, "a") as z:
-            z.write(path, "auto-mapping.csv")
-    files = {m["file"] for m in mapping}
-    print(f"照片 {len(files)} 张：自动对上 {len({m['file'] for m in mapping if m['status'] == '确认'})} 张，"
-          f"之前已上传 {len({m['file'] for m in mapping if m['status'] == '已有实拍图'})} 张，"
-          f"重复文件 {len({m['file'] for m in mapping if m['status'] == '不上传'})} 张，"
-          f"不确定 {len(unsure)} 张，对不上 {len(unmatched)} 张（后三类这次不上传）")
-    print(f"· 对照表：{path}")
-    if any(m["status"] == "确认" for m in mapping):
-        cmd_photo_apply(wp, photo_dir, path)
 
 
 def cmd_audit(wp, out_path):
@@ -1368,7 +1402,7 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "photo-auto", "rename", "merge", "mark-review",
+                                       "photo-restore", "rename", "merge", "mark-review",
                                        "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
@@ -1430,8 +1464,6 @@ def main():
         cmd_photo_apply(wp, args.photos, args.mapping, args.dry_run)
     if args.command == "photo-restore":
         cmd_photo_restore(wp, args.backup)
-    if args.command == "photo-auto":
-        cmd_photo_auto(wp, args.photos)
     if args.command == "rename":
         cmd_rename(wp, args.dry_run)
     if args.command == "merge":

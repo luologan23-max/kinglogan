@@ -86,17 +86,21 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_photos.sh
 # 第 2 步：Claude 核对后提交 content/photo-mapping.csv，你确认后上传（同一条命令，末尾加 apply）
 … run_photos.sh apply
-# 一次做完（先全部导入、之后再核对）：清点备份 → 修正名称 → 合并同名重复 → 重复型号改草稿 → 拿不准的名称标红 → 按文件名自动配图上传
+# 一次做完（先全部导入、之后再核对）：清点备份 → 修正名称 → 合并同名重复 → 重复型号改草稿 → 拿不准的名称标红 → 按对照表配图上传
 … run_photos.sh auto
 # 撤销：按桌面上的备份恢复产品名称、图片和上架状态（用「清点时」的备份可以撤销 auto 的全部改动）
 … run_photos.sh restore ~/Desktop/aurora-产品图片备份-清点时-日期.json
 ```
 
-- **一次做完**（`auto`）：只上传按文件名唯一、确定对上的照片；不确定和对不上的标为「待确认」不上传。
-  实际用的对照表存到桌面「aurora-自动对照表.csv」并附进清点包，之后逐张复核
+- **一次做完**（`auto`）：上传按 `content/photo-mapping.csv`（逐张看图核对过的对照表）里「确认」的照片，「待确认」「不上传」的不动。
+  不再按文件名自动配图：中文文件名逐字比对会把「世纪一」配成「半世纪」、「鉴赏家2号」配成「2号」。
+  每一步都可以重复运行：名称已改好、已合并、已标红、已按同样照片配好的产品都会跳过；一款上传失败不影响其他款，重跑只补失败的
+- **单支雪茄的横条图**（长宽比超过 2，例如 900×130）：上传前在副本上转成 JPG，放到白底正方形画布正中（两端各留约 4%），
+  因为商品卡、产品页都是正方形框、WooCommerce 缩略图也按正方形裁切，直接上传只会显示中间一截。整盒照片等普通照片原样上传
 - **名称修正**（`rename`，表在 `content/name-fixes.csv`）：只改当前名称仍等于表里原值的产品，已经被人改过的不动；产品网址不变。
-  目前 62 项：拼写错误（Siglo Ill、Connossieur、Upmann Upmann）、官方型号写法（Edmundo、Royal Coronas、Maduro 5 Genios 等）、
-  品牌写法统一（H. Upmann、Partagás、Bolívar、Ramón Allones 等）、名字里夹着的换行，以及标准目录里重复的「Punch Punch Punch」。
+  目前 63 项：拼写错误（Siglo Ill、Connossieur、Upmann Upmann）、官方型号写法（Edmundo、Royal Coronas、Maduro 5 Genios 等）、
+  品牌写法统一（H. Upmann、Partagás、Bolívar、Ramón Allones 等）、名字里夹着的换行、标准目录里重复的「Punch Punch Punch」，
+  以及照片环标能证实的官方名（Montecristo Slam → Open Slam）。
   很长的地区限量名只去掉换行，文字不改
 - **合并同名重复**（`merge`）：站点原有产品里完全同名的（例如两个 Cohiba Siglo VI），保留资料最全的一款（同样全时保留编号小的），
   另一款有、保留款缺的资料补过来，另一款改为草稿并记下 `aurora_merged_into`。不删除产品
