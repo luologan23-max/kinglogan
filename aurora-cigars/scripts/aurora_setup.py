@@ -24,6 +24,7 @@
 import argparse
 import base64
 import csv
+import http.cookiejar
 import json
 import os
 import re
@@ -679,10 +680,12 @@ def cmd_audit(wp, out_path):
             targets.append((f"page_{pg['slug']}", pg["link"]))
 
     css_seen = {}
+    # 记住预览 cookie：页面跳转（例如询价页转到需求单）时跳转后的页面同样按预览身份打开
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def fetch(url):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 aurora-audit"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with opener.open(req, timeout=60) as resp:
             return resp.read()
 
     report["pages_html"] = {}
