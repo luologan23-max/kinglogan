@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.1.0' );
+define( 'AURORA_CORE_VERSION', '1.2.0' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -198,6 +198,38 @@ add_action( 'wp_head', function () {
 	<script>try{var k='aurora_request_list',v=JSON.parse(localStorage.getItem(k)||'null');if(Array.isArray(v)){localStorage.setItem(k,JSON.stringify({items:v.map(function(i){return{sku:'P'+i.id,name:i.name,brand:i.brand||'',stockStatus:'in_stock',quantity:1};}),lastUpdated:null}));}}catch(e){}</script>
 	<?php
 }, 1 );
+
+/* -------------------------------------------------------------------------
+ * 站点原有的手写页面（首页「HOMEPAGE v4」、关于、腓尼基限量等）
+ * 这类页面是整段手写 HTML（自带 <style> 或 div/section 区块），不是区块编辑器内容。
+ * WordPress 显示时的自动分段会在里面插满 <p> 和 <br>，把卡片链接拆散、网格错位；
+ * 排版美化（wptexturize）又把页内多语言脚本里的 && 改成 &#038;&#038;，脚本直接报错。
+ * 首页和按钮（aurora-hero、aurora-btn-primary 等）的样式在站点里也已经丢失。
+ * ---------------------------------------------------------------------- */
+
+function aurora_is_handbuilt( $content ) {
+	if ( false !== strpos( $content, '<!-- wp:' ) || false !== strpos( $content, '<!-- aurora:managed -->' ) ) {
+		return false; // 区块编辑器内容、本插件建的页面照常处理
+	}
+	$start = ltrim( preg_replace( '/^(?:\s*<!--.*?-->)+/s', '', $content ) ); // 跳过开头的注释
+	return 1 === preg_match( '/^<(?:style|div|section)\b/i', $start );
+}
+
+function aurora_handbuilt_page() {
+	if ( is_admin() || ! is_page() ) {
+		return false;
+	}
+	$post = get_queried_object();
+	return isset( $post->post_content ) && aurora_is_handbuilt( $post->post_content );
+}
+
+// 只对当前这一页跳过自动分段和排版美化，其他页面照常
+add_action( 'wp', function () {
+	if ( aurora_handbuilt_page() ) {
+		remove_filter( 'the_content', 'wpautop' );
+		remove_filter( 'the_content', 'wptexturize' );
+	}
+} );
 
 /* -------------------------------------------------------------------------
  * 目录模式：关闭购物车与结账
@@ -462,6 +494,9 @@ add_action( 'wp_enqueue_scripts', function () {
 		wp_enqueue_script( 'aurora-integrate', AURORA_CORE_URL . 'assets/aurora-integrate.js', array(), AURORA_CORE_VERSION, true );
 	} else {
 		wp_enqueue_style( 'aurora-store', AURORA_CORE_URL . 'assets/aurora-store.css', array( 'aurora-base' ), AURORA_CORE_VERSION );
+	}
+	if ( aurora_handbuilt_page() ) {
+		wp_enqueue_style( 'aurora-pages', AURORA_CORE_URL . 'assets/aurora-pages.css', array( 'aurora-base' ), AURORA_CORE_VERSION );
 	}
 	wp_enqueue_script( 'aurora-core', AURORA_CORE_URL . 'assets/aurora.js', array(), AURORA_CORE_VERSION, true );
 	wp_localize_script( 'aurora-core', 'AURORA', array(

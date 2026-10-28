@@ -1,0 +1,352 @@
+/* 站点原有的手写页面（首页「HOMEPAGE v4」等）的样式。
+   这些区块（aurora-hero、aurora-brand-grid、aurora-product-card……）在站点里一直没有样式，
+   这里按站点 Design System v6 的设计语言补上：奶油底、墨色字、金色点缀、直角、细线。
+   颜色和字体优先用片段 11 定义的变量，没有时用同样的值兜底。 */
+
+.entry-content {
+	--ap-cream: var(--cream, #FAFAF8);
+	--ap-ink: var(--ink, #1A1A18);
+	--ap-ink-mid: var(--ink-mid, #4A4A46);
+	--ap-ink-light: var(--ink-light, #9A9A94);
+	--ap-border: var(--border, #E2E2DC);
+	--ap-gold: var(--gold, #B8975A);
+	--ap-gold-light: var(--gold-light, #F5EDD8);
+	--ap-warm: var(--bg-warm, #F5F3EF);
+	--ap-green: var(--green, #1A9968);
+	--ap-serif: var(--serif, 'Bodoni Moda', serif);
+	--ap-garamond: var(--garamond, 'EB Garamond', serif);
+	--ap-sans: var(--sans, 'Jost', sans-serif);
+}
+
+/* ── 页面外框 ─────────────────────────────────────────────── */
+/* 页面自带大标题（首页、关于、腓尼基限量……）时不再显示 Astra 的页面标题，内容紧接导航 */
+article:has(.entry-content h1) .entry-header { display: none; }
+body:has(.entry-content h1) #primary { margin-top: 0; }
+body:has(.aurora-hero-left) #primary { margin-bottom: 0; }
+/* 全局导航片段已经有一条滚动条，页面里的那条重复了 */
+body:has(#aurora-nav) .entry-content .aurora-ticker { display: none; }
+
+/* ── 首屏 ─────────────────────────────────────────────────── */
+.entry-content .aurora-hero:has(.aurora-hero-left) {
+	display: grid;
+	grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+	gap: clamp(48px, 6vw, 88px);
+	align-items: center;
+	padding: clamp(40px, 6vw, 80px) 0 clamp(56px, 7vw, 96px);
+	text-align: left;
+}
+.aurora-hero-left { position: relative; padding: 0 0 28px; }
+.aurora-hero-img-frame {
+	aspect-ratio: 4 / 5;
+	background: #14110d url(placeholder.jpg) center / cover no-repeat;
+	outline: 1px solid rgba(184, 151, 90, .4);
+	outline-offset: -14px;
+}
+.aurora-hero-img-inner { display: none; } /* 原来的「产品图片」占位文字 */
+
+.entry-content a.aurora-hvb {
+	position: absolute;
+	left: -28px;
+	bottom: 96px;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 14px 20px 14px 14px;
+	background: var(--ap-cream);
+	border: 1px solid var(--ap-border);
+	box-shadow: 0 14px 34px rgba(26, 26, 24, .14);
+	color: var(--ap-ink);
+	text-decoration: none;
+}
+.aurora-hvb-icon {
+	flex: none;
+	width: 38px;
+	height: 38px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--ap-ink);
+	color: var(--ap-gold);
+	font-size: 19px;
+}
+.aurora-hvb-text { display: flex; flex-direction: column; line-height: 1.35; }
+.aurora-hvb-label { font: 500 9px var(--ap-sans); letter-spacing: .16em; text-transform: uppercase; color: var(--ap-gold); }
+.aurora-hvb-title { font: 16px var(--ap-garamond); color: var(--ap-ink); }
+.aurora-hvb-link { font: 10px var(--ap-sans); letter-spacing: .06em; color: var(--ap-ink-light); }
+
+.aurora-hero-sealed {
+	position: absolute;
+	top: 26px;
+	right: 26px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 12px;
+	background: rgba(250, 250, 248, .94);
+	font: 500 10px var(--ap-sans);
+	letter-spacing: .08em;
+	color: var(--ap-ink);
+}
+.aurora-hero-sealed-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ap-green); }
+
+.aurora-hero-stats {
+	position: absolute;
+	right: -24px;
+	bottom: 0;
+	display: flex;
+	flex-direction: column;
+	padding: 18px 24px;
+	background: var(--ap-ink);
+}
+.aurora-hero-stats-num { font: 400 36px/1 var(--ap-serif); color: var(--ap-gold); }
+.aurora-hero-stats-label { margin-top: 8px; font: 500 9px var(--ap-sans); letter-spacing: .16em; text-transform: uppercase; color: rgba(250, 250, 248, .7); }
+
+.aurora-hero .aurora-hero-eyebrow {
+	max-width: none;
+	margin: 0 0 20px;
+	font: 500 10px var(--ap-sans);
+	letter-spacing: .24em;
+	text-transform: uppercase;
+	color: var(--ap-gold);
+}
+.aurora-hero .aurora-hero-title {
+	margin: 0 0 24px;
+	font: 400 clamp(38px, 4.6vw, 62px)/1.14 var(--ap-serif);
+	letter-spacing: .01em;
+	color: var(--ap-ink);
+}
+.aurora-hero .aurora-hero-title em { font-style: italic; color: var(--ap-gold); }
+.aurora-hero .aurora-hero-sub {
+	max-width: 34em;
+	margin: 0 0 30px;
+	font: 18px/1.7 var(--ap-garamond);
+	color: var(--ap-ink-mid);
+}
+
+/* 官方正品验证模块 */
+.aurora-hvm { margin: 0 0 32px; background: var(--ap-warm); border: 1px solid var(--ap-border); }
+.aurora-hvm-header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--ap-border); }
+.aurora-hvm-header > .ti { font-size: 20px; color: var(--ap-gold); }
+.aurora-hvm-header-text { display: flex; flex-direction: column; line-height: 1.4; }
+.aurora-hvm-title { font: 500 13px var(--ap-sans); letter-spacing: .04em; color: var(--ap-ink); }
+.aurora-hvm-title-en { font: italic 14px var(--ap-garamond); color: var(--ap-ink-light); }
+.aurora-hvm-body { padding: 16px 20px 18px; }
+.aurora-hero .aurora-hvm-desc { max-width: none; margin: 0 0 6px; font: 16px/1.65 var(--ap-garamond); color: var(--ap-ink-mid); }
+.aurora-hero .aurora-hvm-desc-en { max-width: none; margin: 0 0 14px; font: italic 15px/1.6 var(--ap-garamond); color: var(--ap-ink-light); }
+.entry-content a.aurora-hvm-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding-bottom: 3px;
+	border-bottom: 1px solid var(--ap-gold);
+	font: 500 11px var(--ap-sans);
+	letter-spacing: .08em;
+	color: var(--ap-ink);
+	text-decoration: none;
+}
+
+/* 按钮 */
+.aurora-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.entry-content a.aurora-btn-primary,
+.entry-content a.aurora-btn-outline {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 50px;
+	padding: 0 30px;
+	border: 1px solid var(--ap-ink);
+	font: 500 11px var(--ap-sans);
+	letter-spacing: .16em;
+	text-transform: uppercase;
+	text-decoration: none;
+	transition: background .2s, color .2s, border-color .2s;
+}
+.entry-content a.aurora-btn-primary { background: var(--ap-ink); color: var(--ap-cream); }
+.entry-content a.aurora-btn-primary:hover { background: #000; color: var(--ap-cream); }
+.entry-content a.aurora-btn-outline { background: transparent; color: var(--ap-ink); }
+.entry-content a.aurora-btn-outline:hover { background: var(--ap-ink); color: var(--ap-cream); }
+
+/* ── 区块标题 ─────────────────────────────────────────────── */
+.entry-content .aurora-section:has(.aurora-brand-grid),
+.entry-content .aurora-products-section {
+	max-width: none;
+	margin: 0;
+	padding: clamp(48px, 7vw, 88px) 0 0;
+}
+.aurora-section-header {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 16px;
+	padding-bottom: 18px;
+	border-bottom: 1px solid var(--ap-ink);
+}
+.entry-content .aurora-section-title { margin: 0; font: 400 clamp(26px, 3vw, 36px)/1.2 var(--ap-serif); color: var(--ap-ink); }
+.entry-content a.aurora-section-link {
+	flex: none;
+	padding-bottom: 3px;
+	border-bottom: 1px solid var(--ap-gold);
+	font: 500 10px var(--ap-sans);
+	letter-spacing: .18em;
+	text-transform: uppercase;
+	color: var(--ap-ink-mid);
+	text-decoration: none;
+}
+
+/* ── 品牌宫格 ─────────────────────────────────────────────── */
+.aurora-brand-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 1px;
+	background: var(--ap-border);
+	border-bottom: 1px solid var(--ap-border);
+}
+.entry-content a.aurora-brand-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-height: 176px;
+	padding: 24px 24px 22px;
+	background: var(--ap-cream);
+	color: var(--ap-ink);
+	text-decoration: none;
+	transition: background .2s;
+}
+.entry-content a.aurora-brand-card:hover { background: var(--ap-warm); }
+.aurora-brand-num { margin-bottom: auto; font: 500 10px var(--ap-sans); letter-spacing: .16em; color: var(--ap-gold); }
+.aurora-brand-name-en { margin-top: 28px; font: 400 22px/1.2 var(--ap-serif); color: var(--ap-ink); }
+.aurora-brand-name-cn { margin-top: 4px; font: 15px var(--ap-garamond); color: var(--ap-ink-mid); }
+.aurora-brand-count { margin-top: 12px; font: 10px var(--ap-sans); letter-spacing: .12em; color: var(--ap-ink-light); }
+.aurora-brand-arrow { position: absolute; top: 22px; right: 22px; font-size: 16px; color: var(--ap-ink-light); transition: transform .2s, color .2s; }
+.entry-content a.aurora-brand-card:hover .aurora-brand-arrow { color: var(--ap-gold); transform: translateX(3px); }
+
+/* ── 热门产品 ─────────────────────────────────────────────── */
+.aurora-product-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	background: var(--ap-border);
+	border-bottom: 1px solid var(--ap-border);
+}
+.aurora-product-card { display: flex; flex-direction: column; background: var(--ap-cream); }
+.aurora-product-img { position: relative; aspect-ratio: 1 / 1; background: #14110d url(placeholder.jpg) center / cover no-repeat; }
+.aurora-product-img > .ti { display: none; }
+.aurora-product-badge {
+	position: absolute;
+	top: 14px;
+	left: 14px;
+	padding: 5px 10px;
+	background: var(--ap-cream);
+	font: 500 10px var(--ap-sans);
+	letter-spacing: .12em;
+	color: var(--ap-ink);
+}
+.aurora-product-badge.aurora-badge-gold { background: var(--ap-gold); color: #fff; }
+.aurora-product-info { display: flex; flex: 1; flex-direction: column; padding: 20px 22px 22px; }
+.aurora-product-brand { margin-bottom: 8px; font: 500 9px var(--ap-sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ap-gold); }
+.aurora-product-name { font: 400 20px/1.3 var(--ap-serif); color: var(--ap-ink); }
+.aurora-product-name-en { margin-top: 2px; font: italic 15px var(--ap-garamond); color: var(--ap-ink-light); }
+.aurora-product-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: auto;
+	padding-top: 16px;
+	border-top: 1px solid var(--ap-border);
+}
+.aurora-product-info .aurora-product-name-en { margin-bottom: 18px; }
+.aurora-product-price { font: 400 22px var(--ap-serif); color: var(--ap-ink); }
+.aurora-product-price .cur { margin-right: 4px; font: 500 9px var(--ap-sans); letter-spacing: .12em; color: var(--ap-ink-light); vertical-align: 4px; }
+.entry-content a.aurora-wa-small {
+	width: 34px;
+	height: 34px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--ap-border);
+	font-size: 16px;
+	color: var(--ap-ink-mid);
+	text-decoration: none;
+	transition: background .2s, color .2s, border-color .2s;
+}
+.entry-content a.aurora-wa-small:hover { background: #25D366; border-color: #25D366; color: #fff; }
+
+/* ── 腓尼基限量 ───────────────────────────────────────────── */
+.aurora-limited-section { padding: clamp(56px, 8vw, 96px) 0 0; }
+.aurora-limited-banner { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); background: var(--ap-ink); color: var(--ap-cream); }
+.aurora-limited-left { padding: clamp(32px, 5vw, 64px); }
+.aurora-limited-eyebrow { margin-bottom: 18px; font: 500 10px var(--ap-sans); letter-spacing: .24em; text-transform: uppercase; color: var(--ap-gold); }
+.entry-content .aurora-limited-title { margin: 0 0 18px; font: 400 clamp(32px, 3.6vw, 46px)/1.15 var(--ap-serif); color: var(--ap-cream); }
+.aurora-limited-title em { font-style: italic; color: var(--ap-gold); }
+.entry-content .aurora-limited-desc { max-width: 32em; margin: 0 0 22px; font: 16px/1.7 var(--ap-garamond); color: rgba(250, 250, 248, .72); }
+.aurora-limited-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 30px; }
+.aurora-limited-tag { padding: 6px 12px; border: 1px solid rgba(184, 151, 90, .45); font: 500 10px var(--ap-sans); letter-spacing: .1em; color: var(--ap-gold-light); }
+.entry-content .aurora-limited-left a.aurora-btn-primary { background: var(--ap-gold); border-color: var(--ap-gold); color: var(--ap-ink); }
+.entry-content .aurora-limited-left a.aurora-btn-primary:hover { background: var(--ap-cream); border-color: var(--ap-cream); }
+.aurora-limited-right {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	padding: clamp(32px, 5vw, 64px);
+	border-left: 1px solid rgba(250, 250, 248, .12);
+}
+.aurora-limited-num { font: 400 clamp(56px, 7vw, 88px)/1 var(--ap-serif); color: var(--ap-gold); }
+.aurora-limited-num-label { margin: 10px 0 24px; font: 500 10px var(--ap-sans); letter-spacing: .2em; text-transform: uppercase; color: rgba(250, 250, 248, .6); }
+.aurora-limited-row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid rgba(250, 250, 248, .12); }
+.aurora-limited-row-name { font: 16px var(--ap-garamond); color: var(--ap-cream); }
+.aurora-limited-row-year { font: 500 11px var(--ap-sans); letter-spacing: .12em; color: var(--ap-gold); }
+
+/* ── 四项保障 ─────────────────────────────────────────────── */
+.entry-content .aurora-trust {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	margin: clamp(56px, 8vw, 96px) 0;
+	border-top: 1px solid var(--ap-border);
+	border-bottom: 1px solid var(--ap-border);
+}
+.aurora-trust-item { padding: 32px 26px; border-left: 1px solid var(--ap-border); }
+.aurora-trust-item:first-child { border-left: 0; }
+.aurora-trust-icon { font-size: 22px; color: var(--ap-gold); }
+.aurora-trust-title { margin: 14px 0 8px; font: 400 18px var(--ap-serif); color: var(--ap-ink); }
+.entry-content .aurora-trust-desc { margin: 0; font: 15px/1.65 var(--ap-garamond); color: var(--ap-ink-mid); }
+
+/* ── 平板 ─────────────────────────────────────────────────── */
+@media (max-width: 921px) {
+	.entry-content .aurora-hero:has(.aurora-hero-left) { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+	.aurora-hero-right { order: -1; }
+	.aurora-hero-left { width: 100%; max-width: 480px; margin: 0 auto; }
+	.entry-content a.aurora-hvb { left: -12px; }
+	.aurora-hero-stats { right: -12px; }
+	.aurora-brand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.aurora-limited-banner { grid-template-columns: minmax(0, 1fr); }
+	.aurora-limited-right { border-left: 0; border-top: 1px solid rgba(250, 250, 248, .12); }
+	.entry-content .aurora-trust { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.aurora-trust-item:nth-child(3) { border-left: 0; }
+	.aurora-trust-item:nth-child(n+3) { border-top: 1px solid var(--ap-border); }
+}
+
+/* ── 手机 ─────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+	.entry-content .aurora-hero:has(.aurora-hero-left) { padding-top: 28px; }
+	.aurora-hero .aurora-hero-sub { font-size: 17px; }
+	.aurora-hero-actions > a { flex: 1 1 140px; padding: 0 16px; }
+	.aurora-hero-sealed { top: 20px; right: 20px; }
+	.entry-content a.aurora-hvb { left: -8px; bottom: 84px; padding: 10px 14px 10px 10px; }
+	.aurora-hero-stats { right: -8px; padding: 14px 18px; }
+	.aurora-hero-stats-num { font-size: 30px; }
+	.entry-content a.aurora-brand-card { min-height: 150px; padding: 18px 16px 16px; }
+	.aurora-brand-name-en { margin-top: 22px; font-size: 18px; }
+	.aurora-brand-arrow { top: 16px; right: 14px; }
+	/* 热门产品改为横向滑动，一屏一张半 */
+	.aurora-product-grid { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 72%; overflow-x: auto; scroll-snap-type: x mandatory; }
+	.aurora-product-card { scroll-snap-align: start; }
+	.aurora-trust-item { padding: 24px 16px; }
+}
+
+/* ── 关于页（页面自带样式）在手机上的修正 ─────────────────── */
+/* 三个资质徽章加上 48px 内边距比手机屏幕宽，把整列撑出屏幕 */
+@media (max-width: 600px) {
+	.entry-content .about-hero { grid-template-columns: minmax(0, 1fr); }
+	.entry-content .about-hero-inner { padding: 32px 16px; }
+	.entry-content .about-badge-row { flex-wrap: wrap; justify-content: center; }
+}

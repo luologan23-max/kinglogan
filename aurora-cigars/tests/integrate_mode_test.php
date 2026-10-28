@@ -37,4 +37,33 @@ $GLOBALS['enqueued'] = array();
 do_action( 'wp_enqueue_scripts' );
 $assets = implode( ' ', $GLOBALS['enqueued'] );
 check( '加载 base + integrate，不加载 store 和重复字体', false !== strpos( $assets, 'aurora-base.css' ) && false !== strpos( $assets, 'aurora-integrate.css' ) && false !== strpos( $assets, 'aurora-integrate.js' ) && false === strpos( $assets, 'aurora-store.css' ) && false === strpos( $assets, 'fonts.googleapis' ) );
+
+// 站点原有的手写页面：跳过自动分段和排版美化，并加载 aurora-pages.css
+$home  = "<!-- HOMEPAGE v4 -->\n<!-- Trust Ticker -->\n<div class=\"aurora-ticker\">x</div>\n<div class=\"aurora-hero\">…</div>";
+$about = "<style>\n.about-hero{display:grid}\n</style>\n\n<div class=\"about-hero\">…</div>";
+check( '识别手写首页（开头是注释再接 div）', aurora_is_handbuilt( $home ) );
+check( '识别自带 <style> 的手写页面', aurora_is_handbuilt( $about ) );
+check( '区块编辑器内容不算', ! aurora_is_handbuilt( "<!-- wp:paragraph -->\n<p>Hi</p>\n<!-- /wp:paragraph -->" ) );
+check( '本插件建的页面不算', ! aurora_is_handbuilt( "<!-- aurora:managed -->\n<div class=\"aurora-hero\">x</div>" ) );
+check( '普通文字页面不算', ! aurora_is_handbuilt( "常见问题\n\n怎么下单？" ) );
+
+$GLOBALS['is_page'] = true;
+$GLOBALS['queried'] = (object) array( 'post_content' => $home );
+$GLOBALS['removed'] = array();
+do_action( 'wp' );
+check( '手写页面跳过 wpautop 和 wptexturize', in_array( 'the_content:wpautop:10', $GLOBALS['removed'], true ) && in_array( 'the_content:wptexturize:10', $GLOBALS['removed'], true ) );
+$GLOBALS['enqueued'] = array();
+do_action( 'wp_enqueue_scripts' );
+check( '手写页面加载 aurora-pages.css', false !== strpos( implode( ' ', $GLOBALS['enqueued'] ), 'aurora-pages.css' ) );
+
+$GLOBALS['queried'] = (object) array( 'post_content' => "<!-- wp:paragraph -->\n<p>Hi</p>\n<!-- /wp:paragraph -->" );
+$GLOBALS['removed'] = array();
+do_action( 'wp' );
+$GLOBALS['enqueued'] = array();
+do_action( 'wp_enqueue_scripts' );
+check( '其他页面照常分段、不加载 aurora-pages.css', array() === $GLOBALS['removed'] && false === strpos( implode( ' ', $GLOBALS['enqueued'] ), 'aurora-pages.css' ) );
+$GLOBALS['is_page'] = false;
+$GLOBALS['queried'] = (object) array( 'post_content' => $home );
+check( '商品等非页面不受影响', ! aurora_handbuilt_page() );
+
 exit( $fail ? 1 : 0 );

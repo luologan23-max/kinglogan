@@ -18,6 +18,13 @@ for (const [url, file] of Object.entries(report.css_map || {})) {
 }
 
 function vendor(...p) { return path.join(vendorDir, ...p); }
+// AURORA_LOCAL_PLUGIN=1：插件自己的文件用本地工作副本（看即将部署的效果），本地没有的仍用诊断包里的
+const pluginDir = path.resolve(__dirname, '..', 'plugin', 'aurora-core');
+function localPlugin(p) {
+	const m = process.env.AURORA_LOCAL_PLUGIN && p.match(/\/wp-content\/plugins\/aurora-core\/(assets\/[^?]+)$/);
+	const f = m && path.join(pluginDir, m[1]);
+	return f && fs.existsSync(f) ? f : null;
+}
 
 async function serve(route) {
 	const u = new URL(route.request().url());
@@ -31,6 +38,8 @@ async function serve(route) {
 	if (u.host !== site.host) return route.abort();
 
 	const p = decodeURIComponent(u.pathname);
+	const local = localPlugin(p);
+	if (local) return route.fulfill({ path: local, contentType: local.endsWith('.css') ? 'text/css' : local.endsWith('.jpg') ? 'image/jpeg' : 'application/octet-stream' });
 	if (cssByPath[u.pathname]) return route.fulfill({ path: cssByPath[u.pathname], contentType: 'text/css' });
 	if (p.endsWith('/jquery.min.js')) return route.fulfill({ path: vendor('jquery-3.7.1', 'package', 'dist', 'jquery.min.js'), contentType: 'application/javascript' });
 	if (p.endsWith('/jquery-migrate.min.js')) return route.fulfill({ path: vendor('jquery-migrate-3.4.1', 'package', 'dist', 'jquery-migrate.min.js'), contentType: 'application/javascript' });
@@ -53,7 +62,7 @@ async function serve(route) {
 		await ctx.addCookies([{ name: 'aurora_age_ok', value: '1', domain: site.host, path: '/' }]);
 		await ctx.route('**/*', serve);
 		for (const [label, info] of Object.entries(report.pages_html)) {
-			if (!info.file) continue;
+			if (!info.file || (process.env.AURORA_ONLY && !process.env.AURORA_ONLY.split(',').includes(label))) continue; // AURORA_ONLY=home,shop 只渲染这几页
 			const html = fs.readFileSync(path.join(auditDir, info.file), 'utf8');
 			const page = await ctx.newPage();
 			await page.route(info.url.split('?')[0] + '*', (r) => r.request().resourceType() === 'document'

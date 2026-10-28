@@ -32,6 +32,7 @@
   2. 隐藏和站点设计重复的层：Astra 默认的卡片标题/价格/购物袋按钮、旧需求单脚本加的角标和蓝色按钮、重复的面包屑和页脚、产品页上的悬浮 WhatsApp
   3. 修好站点自带的「＋」和「加入询价清单」按钮（原来 onclick 里的引号把属性截断了，点了没反应），并把旧的数组格式清单统一成需求单页面读取的 `{items:[…]}` 格式
 - **店面模式**：没有这些片段时使用下面这一整套插件自带的店面
+- **站点原有的手写页面**（首页「HOMEPAGE v4」、关于、腓尼基限量等整段手写 HTML 的页面，两种模式都适用）：跳过 WordPress 的自动分段和排版美化（它们会在手写 HTML 里插满 `<p>`/`<br>`，拆散卡片、打乱网格，还把页内多语言脚本里的 `&&` 改坏），并加载 `aurora-pages.css`：补上首页各区块和 `aurora-btn-*` 按钮丢失的样式，隐藏重复的滚动条和页面标题。区块编辑器的页面和本插件建的页面不受影响
 
 两种模式都保留：目录模式、年龄验证、内部预览模式、「价格请询价」、短代码。
 
@@ -136,7 +137,7 @@ node tests/browser_test.js /tmp/normal.html /tmp/limited.html /tmp      # 需要
 php tests/integrate_mode_test.php                                         # 整合模式（站点有自己的店面片段时）
 php tests/private_mode_test.php anon                                      # 内部预览模式：anon / loggedin / key-good / key-bad / off
 node tests/integrate_bridge_test.js <诊断包目录> <vendor 目录>            # 用线上页面测「＋」和「加入询价清单」
-node tests/render_audit.js <诊断包目录> <vendor 目录> <输出目录> [CSS]      # 离线还原线上页面截图
+node tests/render_audit.js <诊断包目录> <vendor 目录> <输出目录> [CSS]      # 离线还原线上页面截图（AURORA_ONLY=home,shop 只渲染部分页面；AURORA_LOCAL_PLUGIN=1 用本地插件文件看即将部署的效果）
 python3 tests/mock_wc_server.py 8765 &                                   # 模拟 WooCommerce API（MOCK_BLOCK_DELETE=1 模拟拦截 DELETE）
 AURORA_SITE=http://127.0.0.1:8765 AURORA_USER=tester AURORA_APP_PASSWORD='abcd efgh ijkl' \
   python3 scripts/aurora_setup.py all tests/sample_products.csv

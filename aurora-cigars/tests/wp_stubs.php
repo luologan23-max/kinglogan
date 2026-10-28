@@ -10,6 +10,9 @@ $GLOBALS['cookies']    = $_COOKIE;
 function add_action( $tag, $cb, $prio = 10, $args = 1 ) { $GLOBALS['hooks'][ $tag ][ $prio ][] = $cb; }
 function add_filter( $tag, $cb, $prio = 10, $args = 1 ) { add_action( $tag, $cb, $prio, $args ); }
 function remove_action( $tag, $cb, $prio = 10 ) { $GLOBALS['removed'][] = "$tag:$cb:$prio"; }
+function remove_filter( $tag, $cb, $prio = 10 ) { remove_action( $tag, $cb, $prio ); }
+function is_page() { return ! empty( $GLOBALS['is_page'] ); }
+function get_queried_object() { return $GLOBALS['queried'] ?? null; }
 function do_action( $tag ) {
 	if ( empty( $GLOBALS['hooks'][ $tag ] ) ) return;
 	ksort( $GLOBALS['hooks'][ $tag ] );

@@ -670,6 +670,13 @@ def cmd_audit(wp, out_path):
         hit = next((p for p in prods if p["ours"] == want_ours and p["status"] == "publish" and p.get("link")), None)
         if hit:
             targets.append((label, hit["link"]))
+    # 站点其他已发布页面（关于、常见问题、批发、限量……），用来检查手写页面的效果
+    skip = {"shop", "cart", "checkout", "my-account"}
+    pages = report.get("pages") if isinstance(report.get("pages"), list) else []
+    front = str((report.get("site") or {}).get("page_on_front", "")) if isinstance(report.get("site"), dict) else ""
+    for pg in pages:
+        if pg.get("status") == "publish" and pg.get("link") and pg.get("slug") not in skip and str(pg.get("id")) != front:
+            targets.append((f"page_{pg['slug']}", pg["link"]))
 
     css_seen = {}
 
