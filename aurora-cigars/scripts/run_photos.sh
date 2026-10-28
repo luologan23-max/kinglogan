@@ -23,12 +23,13 @@ export AURORA_APP_PASSWORD
 
 ask_folder() {
 	DIR=""
-	# 把文件夹拖进终端时，路径末尾会多一个空格，空格等字符前会加反斜杠
+	# 拖进来的可以是一个或多个文件夹，也可以是一堆照片；多个文件夹会一起处理（见 pick_folder.py）
 	while [ -z "$DIR" ] || [ ! -d "$DIR" ]; do
-		read -r -p "把放照片的文件夹拖进这个窗口，然后按回车：" DIR
-		DIR="$(printf '%s' "$DIR" | sed -e 's/[[:space:]]*$//' -e "s/^'\(.*\)'$/\1/" -e 's/\\\(.\)/\1/g')"
-		[ -d "$DIR" ] || echo "✗ 找不到这个文件夹：$DIR"
+		read -r -p "把放照片的文件夹拖进这个窗口（可以拖多个），然后按回车：" RAW
+		DIR="$(printf '%s' "$RAW" | python3 pick_folder.py || true)"
+		[ -d "$DIR" ] || echo "✗ 没有找到文件夹，请把文件夹（不是里面的照片）拖进来再按回车"
 	done
+	echo "· 照片目录：$DIR"
 }
 
 run() { echo; echo "━━ $1"; shift; python3 aurora_setup.py "$@"; }

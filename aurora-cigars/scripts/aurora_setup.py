@@ -516,7 +516,7 @@ def name_score(a, b):
 def walk_photos(photo_dir):
     """照片目录（含子文件夹）里的所有图片，返回按字母排序的相对路径。"""
     out = []
-    for root, dirs, files in os.walk(photo_dir):
+    for root, dirs, files in os.walk(photo_dir, followlinks=True):
         dirs[:] = sorted(d for d in dirs if not d.startswith("."))
         for name in sorted(files):
             if not name.startswith(".") and os.path.splitext(name)[1].lower() in PHOTO_EXT:
@@ -1057,9 +1057,18 @@ def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.z
     products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,meta_data", "status": "any"})
     _, rows, unmatched, unsure = match_photos(photo_dir, products)
     has_photo = {p.get("sku") for p in products if image_source(p) == "photo"}  # 重新运行时不重复上传
+    import hashlib
+    first_of = {}  # 内容完全相同的照片（例如两个文件夹里各放了一份）只上传第一张
+    for r in rows:
+        if r["file"] not in first_of:
+            digest = hashlib.sha1(open(os.path.join(photo_dir, r["file"]), "rb").read()).hexdigest()
+            first_of[r["file"]] = first_of.setdefault(digest, r["file"])
     mapping = []
     for r in rows:
-        if r["status"] == "已匹配" and r["sku"] in has_photo:
+        if first_of[r["file"]] != r["file"]:
+            mapping.append({"file": r["file"], "sku": r.get("sku", ""), "product": r.get("product", ""), "role": "",
+                            "order": r.get("order", ""), "status": "不上传", "note": f"与 {first_of[r['file']]} 内容完全相同"})
+        elif r["status"] == "已匹配" and r["sku"] in has_photo:
             mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"], "role": "", "order": r["order"],
                             "status": "已有实拍图", "note": "之前已经上传过，这次跳过"})
         elif r["status"] == "已匹配":
@@ -1082,6 +1091,7 @@ def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.z
     files = {m["file"] for m in mapping}
     print(f"照片 {len(files)} 张：自动对上 {len({m['file'] for m in mapping if m['status'] == '确认'})} 张，"
           f"之前已上传 {len({m['file'] for m in mapping if m['status'] == '已有实拍图'})} 张，"
+          f"重复文件 {len({m['file'] for m in mapping if m['status'] == '不上传'})} 张，"
           f"不确定 {len(unsure)} 张，对不上 {len(unmatched)} 张（后三类这次不上传）")
     print(f"· 对照表：{path}")
     if any(m["status"] == "确认" for m in mapping):
