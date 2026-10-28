@@ -912,14 +912,88 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
 
 
 def cmd_photo_restore(wp, backup_json):
-    """按备份把产品图片恢复成备份时的样子（图片文件仍在媒体库里，只是重新关联）。"""
+    """按备份把产品名称、图片和上架/草稿状态恢复成备份时的样子（图片文件仍在媒体库里，只是重新关联）。"""
     with open(os.path.expanduser(backup_json), encoding="utf-8") as f:
         snap = json.load(f)
-    updates = [{"id": p["id"], "images": [{"id": i["id"]} for i in p["images"] if i.get("id")],
-                "meta_data": [{"key": "aurora_image_source", "value": p.get("image_source") or ""}]} for p in snap]
+    updates = [dict({"id": p["id"], "name": p["name"], "images": [{"id": i["id"]} for i in p["images"] if i.get("id")],
+                     "meta_data": [{"key": "aurora_image_source", "value": p.get("image_source") or ""}]},
+                    **({"status": p["status"]} if p.get("status") else {})) for p in snap]
     for i in range(0, len(updates), 50):
         wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
-    print(f"✓ 已把 {len(updates)} 款产品的图片恢复为备份时的状态")
+    print(f"✓ 已把 {len(updates)} 款产品的名称、图片和上架状态恢复为备份时的样子")
+
+
+def cmd_rename(wp, dry_run=False):
+    """按 content/name-fixes.csv 修正写错的产品名称（field 为 name 或某个英文名字段）。
+    只改当前值仍等于表里「原值」的产品，已经被人改过的不动；产品网址（slug）不变。
+    修改前的名称在清点备份里，photo-restore 可以恢复。"""
+    with open(os.path.join(CONTENT_DIR, "name-fixes.csv"), newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,meta_data", "status": "any"})
+    by_sku = {(p.get("sku") or "").upper(): p for p in products if p.get("sku")}
+    norm = lambda t: re.sub(r"\s+", " ", str(t or "")).strip()
+    updates, already, skipped = {}, 0, 0
+    for r in rows:
+        p = by_sku.get(r["sku"].upper())
+        if not p:
+            print(f"· 网站上没有 {r['sku']}，跳过")
+            continue
+        field = r.get("field") or "name"
+        cur = p["name"] if field == "name" else next((m["value"] for m in p.get("meta_data", []) if m["key"] == field), "")
+        if str(cur or "").strip() == r["new"]:  # 精确比较：只差换行的名字也要改
+            already += 1
+            continue
+        if norm(cur) != norm(r["old"]):
+            print(f"! {r['sku']} 现在是「{norm(cur)}」，和表里的原值不同（可能已经改过），不动")
+            skipped += 1
+            continue
+        u = updates.setdefault(p["id"], {"id": p["id"]})
+        if field == "name":
+            u["name"] = r["new"]
+        else:
+            u.setdefault("meta_data", []).append({"key": field, "value": r["new"]})
+        print(f"  {r['sku']:<11} {norm(cur)} → {r['new']}（{r['reason']}）")
+    print(f"名称修正：要改 {len(updates)} 款，已经是正确名称 {already} 项，跳过 {skipped} 项")
+    if dry_run or not updates:
+        return
+    items = list(updates.values())
+    for i in range(0, len(items), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": items[i:i + 50]})
+    print(f"✓ 已修正 {len(items)} 款产品的名称（产品网址不变）")
+
+
+def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.zip"):
+    """一次做完：按文件名自动对照，只上传唯一、确定的匹配；不确定和对不上的不上传，标为「待确认」列在对照表里。
+    对照表存到桌面并附进清点包，之后可以逐张核对；上传沿用 photo-apply（先备份、按顺序进图库、原图不动）。"""
+    if not photo_dir or not os.path.isdir(photo_dir):
+        raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
+    products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,aurora_name_cn,status,meta_data", "status": "any"})
+    _, rows, unmatched, unsure = match_photos(photo_dir, products)
+    mapping = []
+    for r in rows:
+        if r["status"] == "已匹配":
+            mapping.append({"file": r["file"], "sku": r["sku"], "product": r["product"],
+                            "role": "主图" if r["order"] == 1 else "其他", "order": r["order"], "status": "确认",
+                            "note": f"按文件名自动匹配（相似度 {r['score']}），待人工复核"})
+        else:
+            mapping.append({"file": r["file"], "sku": "", "product": "", "role": "", "order": "", "status": "待确认",
+                            "note": "有两款以上同样接近的产品" if r["file"] in unsure else "文件名对不上任何产品"})
+    path = os.path.expanduser("~/Desktop/aurora-自动对照表.csv")
+    path = path if os.path.isdir(os.path.dirname(path)) else os.path.abspath("aurora-自动对照表.csv")
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, ["file", "sku", "product", "role", "order", "status", "note"])
+        w.writeheader()
+        w.writerows(mapping)
+    inv = os.path.expanduser(inventory_zip)
+    if os.path.isfile(inv):
+        with zipfile.ZipFile(inv, "a") as z:
+            z.write(path, "auto-mapping.csv")
+    files = {m["file"] for m in mapping}
+    print(f"照片 {len(files)} 张：自动对上 {len({m['file'] for m in mapping if m['status'] == '确认'})} 张，"
+          f"不确定 {len(unsure)} 张，对不上 {len(unmatched)} 张（这两类不上传）")
+    print(f"· 对照表：{path}")
+    if any(m["status"] == "确认" for m in mapping):
+        cmd_photo_apply(wp, photo_dir, path)
 
 
 def cmd_audit(wp, out_path):
@@ -1188,7 +1262,7 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "all"])
+                                       "photo-restore", "photo-auto", "rename", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -1249,6 +1323,10 @@ def main():
         cmd_photo_apply(wp, args.photos, args.mapping, args.dry_run)
     if args.command == "photo-restore":
         cmd_photo_restore(wp, args.backup)
+    if args.command == "photo-auto":
+        cmd_photo_auto(wp, args.photos)
+    if args.command == "rename":
+        cmd_rename(wp, args.dry_run)
     if args.command in ("preview-link", "all") and not args.dry_run:
         cmd_preview_link(wp)
 

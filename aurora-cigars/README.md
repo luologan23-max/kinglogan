@@ -86,9 +86,17 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_photos.sh
 # 第 2 步：Claude 核对后提交 content/photo-mapping.csv，你确认后上传（同一条命令，末尾加 apply）
 … run_photos.sh apply
-# 撤销：按桌面上的备份恢复产品图片
-… run_photos.sh restore ~/Desktop/aurora-产品图片备份-上传前-日期.json
+# 一次做完（先全部导入、之后再核对）：清点备份 → 修正写错的名称 → 重复型号改草稿 → 按文件名自动配图上传
+… run_photos.sh auto
+# 撤销：按桌面上的备份恢复产品名称、图片和上架状态（用「清点时」的备份可以撤销 auto 的全部改动）
+… run_photos.sh restore ~/Desktop/aurora-产品图片备份-清点时-日期.json
 ```
+
+- **一次做完**（`auto`）：只上传按文件名唯一、确定对上的照片；不确定和对不上的标为「待确认」不上传。
+  实际用的对照表存到桌面「aurora-自动对照表.csv」并附进清点包，之后逐张复核
+- **名称修正**（`rename`，表在 `content/name-fixes.csv`）：只改当前名称仍等于表里原值的产品，已经被人改过的不动；产品网址不变。
+  目前 62 项：拼写错误（Siglo Ill、Connossieur、Upmann Upmann）、官方型号写法（Edmundo、Royal Coronas、Maduro 5 Genios 等）、
+  品牌写法统一（H. Upmann、Partagás、Bolívar、Ramón Allones 等）、名字里夹着的换行，以及标准目录里重复的「Punch Punch Punch」
 
 - **清点**（`photo-inventory`）：扫描文件夹及子文件夹，记录每张图的路径、大小、尺寸、SHA1 指纹（找出内容完全相同的重复文件），
   生成长边 1000px 的缩略图副本，附上网站现有产品清单和按文件名的初步建议，打包成桌面上的「aurora-图片清单.zip」；

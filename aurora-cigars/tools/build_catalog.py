@@ -102,7 +102,7 @@ CATALOG = [
         ("PCO", "Petit Coronas", "小皇冠", "Mareva", 129, 42, 25),
     ]),
     ("Punch", "潘趣", "中等至浓郁", "Colorado", [
-        ("PUN", "Punch Punch", "潘趣潘趣", "Corona Gorda", 143, 46, 25),
+        ("PUN", "Punch", "潘趣", "Corona Gorda", 143, 46, 25),  # 型号名就叫 Punch，加上品牌即「Punch Punch」
         ("DCO", "Double Coronas", "双皇冠", "Prominente", 194, 49, 25),
         ("PCP", "Petit Coronas del Punch", "小皇冠", "Mareva", 129, 42, 25),
     ]),

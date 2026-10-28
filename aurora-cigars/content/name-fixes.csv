@@ -1,0 +1,80 @@
+sku,field,old,new,reason
+CUB-021,name,Cohiba Siglo Ill,Cohiba Siglo III,罗马数字 III 打成了两个小写 L
+CUB-091,name,H.Upmann Connossieur B,H. Upmann Connoisseur B,Connossieur 拼错，应为 Connoisseur
+CUB-093,name,H.Upmann Connossieur No.2,H. Upmann Connoisseur No.2,Connossieur 拼错，应为 Connoisseur
+CUB-094,name,H.Upmann Connossieur No. 1,H. Upmann Connoisseur No.1,Connossieur 拼错，应为 Connoisseur
+CUB-092,name,H.Upmann Upmann No.2,H. Upmann No.2,Upmann 重复了一次（同系列 CUB-129 写作 H. Upmann No.1）
+CUB-024,name,Cohiba Maduro Genios,Cohiba Maduro 5 Genios,Maduro 5 系列，少了「5」（同系列 CUB-103/104 有）
+CUB-103,name,Cohiba Maduro 5 Magicos,Cohiba Maduro 5 Mágicos,官方拼写 Mágicos
+CUB-054,name,Montecristo Edmundos,Montecristo Edmundo,官方型号名是单数 Edmundo（同系列 Double / Wide / Petit Edmundo）
+CUB-007,name,Bolívar Royal Corona,Bolívar Royal Coronas,官方型号名是复数 Royal Coronas
+CUB-030,name,Hoyo de Monterrey Double Corona,Hoyo de Monterrey Double Coronas,官方型号名是复数 Double Coronas
+CUB-111,name,Romeo y Julieta Petit Churchill,Romeo y Julieta Petit Churchills,官方型号名是复数 Petit Churchills（同系列 Short / Wide Churchills）
+CUB-139,name,Vegas Robaina Unico,Vegas Robaina Únicos,官方型号名 Únicos
+CUB-074,name,El Rey del Mundo Choix Supreme,El Rey del Mundo Choix Suprême,官方拼写 Choix Suprême
+CUB-125,name,Hoyo de Monterrey Le Hoyo du Depute,Hoyo de Monterrey Le Hoyo du Député,官方拼写 Député
+CUB-032,name,Hoyo de Monterrey Le Hoyo de Rio Seco,Hoyo de Monterrey Le Hoyo de Río Seco,官方拼写 Río Seco
+CUB-071,name,San Cristóbal El Principe,San Cristóbal El Príncipe,官方拼写 El Príncipe
+CUB-076,name,Trinidad Vigia,Trinidad Vigía,官方拼写 Vigía
+CUB-018,name,Cohiba Esplendidos,Cohiba Espléndidos,官方拼写 Espléndidos
+CUB-116,name,Romeo y Julieta Exhibicion No.3,Romeo y Julieta Exhibición No.3,官方拼写 Exhibición
+CUB-117,name,Romeo y Julieta Exhibicion No.4,Romeo y Julieta Exhibición No.4,官方拼写 Exhibición
+CUB-089,name,H.Upmann Magnum 50,H. Upmann Magnum 50,品牌写法统一为 H. Upmann
+CUB-090,name,H.Upmann Half Corona,H. Upmann Half Corona,品牌写法统一为 H. Upmann
+CUB-095,name,H.Upmann Magnum 46,H. Upmann Magnum 46,品牌写法统一为 H. Upmann
+CUB-096,name,H.Upmann Sir Winston,H. Upmann Sir Winston,品牌写法统一为 H. Upmann
+CUB-097,name,H.Upmann Regalias,H. Upmann Regalias,品牌写法统一为 H. Upmann
+CUB-001,name,Jose L. Piedra Petit Cazadores,José L. Piedra Petit Cazadores,品牌写法统一为 José L. Piedra
+CUB-002,name,Jose L. Piedra Cazadores,José L. Piedra Cazadores,品牌写法统一为 José L. Piedra
+CUB-004,name,Por Larranaga Picadores,Por Larrañaga Picadores,品牌写法统一为 Por Larrañaga
+CUB-035,name,Juan Lopez Seleccion No.2,Juan López Selección No.2,品牌写法统一为 Juan López；官方拼写 Selección
+CUB-036,name,Juan Lopez Seleccion No.1,Juan López Selección No.1,品牌写法统一为 Juan López；官方拼写 Selección
+CUB-040,name,Rafael Gonzalez Perlas,Rafael González Perlas,品牌写法统一为 Rafael González
+CUB-042,name,Ramon Allones Specially Selected,Ramón Allones Specially Selected,品牌写法统一为 Ramón Allones
+CUB-131,name,Ramon Allones Gigantes,Ramón Allones Gigantes,品牌写法统一为 Ramón Allones
+CUB-132,name,Ramon Allones Small Club Coronas,Ramón Allones Small Club Coronas,品牌写法统一为 Ramón Allones
+CUB-122,name,Bolivar Coronas Gigantes,Bolívar Coronas Gigantes,品牌写法统一为 Bolívar
+CUB-123,name,Bolivar Gold Medal,Bolívar Gold Medal,品牌写法统一为 Bolívar
+CUB-124,name,Bolivar Petit Belicosos,Bolívar Petit Belicosos,品牌写法统一为 Bolívar
+CUB-062,name,Partagas Serie D No.4,Partagás Serie D No.4,品牌写法统一为 Partagás
+CUB-063,name,Partagas Super Partagas,Partagás Super Partagás,品牌写法统一为 Partagás
+CUB-065,name,Partagas Shorts,Partagás Shorts,品牌写法统一为 Partagás
+CUB-066,name,Partagas Serie P No.2,Partagás Serie P No.2,品牌写法统一为 Partagás
+CUB-067,name,Partagas Serie D No.5,Partagás Serie D No.5,品牌写法统一为 Partagás
+CUB-068,name,Partagas Lusitanias,Partagás Lusitanias,品牌写法统一为 Partagás
+CUB-069,name,Partagas Mille Fleurs,Partagás Mille Fleurs,品牌写法统一为 Partagás
+CUB-118,name,Partagas Serie D No.6,Partagás Serie D No.6,品牌写法统一为 Partagás
+CUB-119,name,Partagas Serie E No.2,Partagás Serie E No.2,品牌写法统一为 Partagás
+CUB-120,name,Partagas 8-9-8 Cabinet,Partagás 8-9-8 Cabinet,品牌写法统一为 Partagás
+CUB-121,name,Partagas Coronas,Partagás Coronas,品牌写法统一为 Partagás
+CUB-098,name,"H.Upmann Jarra H. Upmann Magnum
+56 Duty Free and Travel Retail Series
+Magnum 56",H. Upmann Jarra H. Upmann Magnum 56 Duty Free and Travel Retail Series Magnum 56,名字里夹着换行；品牌写法统一为 H. Upmann
+CUB-086,name,"Diplomáticos Edición Regional
+Phoenicia Regional Edition Series
+Genios",Diplomáticos Edición Regional Phoenicia Regional Edition Series Genios,名字里夹着换行，换成空格（文字不变）
+CUB-075,name,"El Rey del Mundo Edición Regional
+Líbano Regional Edition Series W.I.H.
+20 Years",El Rey del Mundo Edición Regional Líbano Regional Edition Series W.I.H. 20 Years,名字里夹着换行，换成空格（文字不变）
+CUB-073,name,"El Rey del Mundo La Casa del Habano
+Exclusivo Royal Series",El Rey del Mundo La Casa del Habano Exclusivo Royal Series,名字里夹着换行，换成空格（文字不变）
+CUB-045,name,"Ramón Allones Edición Regional
+Phoenicia Regional Edition Series
+Phoenicia 40",Ramón Allones Edición Regional Phoenicia Regional Edition Series Phoenicia 40,名字里夹着换行，换成空格（文字不变）
+CUB-044,name,"Ramon Allones Allones Superiores
+LCDH",Ramón Allones Allones Superiores LCDH,名字里夹着换行；品牌写法统一为 Ramón Allones
+CUB-041,name,"Rafael González Coronas de
+Lonsdales",Rafael González Coronas de Lonsdales,名字里夹着换行，换成空格（文字不变）
+CUB-037,name,"Juan López Edición Regional Líbano
+Regional Edition Series Adon",Juan López Edición Regional Líbano Regional Edition Series Adon,名字里夹着换行，换成空格（文字不变）
+CUB-029,name,"Hoyo de Monterrey Le Hoyo de San
+Juan",Hoyo de Monterrey Le Hoyo de San Juan,名字里夹着换行，换成空格（文字不变）
+CUB-014,name,"Quai d'Orsay Edición Regional Líbano
+Regional Edition Series Baalbeck",Quai d'Orsay Edición Regional Líbano Regional Edition Series Baalbeck,名字里夹着换行，换成空格（文字不变）
+CUB-010,name,"Bolívar La Casa del Habano New Gold
+Medal",Bolívar La Casa del Habano New Gold Medal,名字里夹着换行，换成空格（文字不变）
+CUB-005,name,"Por Larrañaga Edición Regional
+Phoenicia Edition Series
+Habana.cuba15 Fenix",Por Larrañaga Edición Regional Phoenicia Edition Series Habana.cuba15 Fenix,名字里夹着换行，换成空格（文字不变）
+PUN-PUN-25,name,潘趣 潘趣潘趣,潘趣 潘趣,标准目录把品牌名重复了一次
+PUN-PUN-25,aurora_name_en,Punch Punch Punch,Punch Punch,标准目录把品牌名重复了一次
