@@ -651,6 +651,17 @@ def read_image_urls(path):
     return urls
 
 
+SAVE_BATCH = 10  # 网站每保存一款产品都要通知 Google / Pinterest 等营销插件，一次存太多容易超时
+
+
+def save_products(wp, items, label="保存"):
+    """分小批保存产品修改，每批后显示进度。重新运行各命令时已改好的会被跳过，中途断了可以直接重跑。"""
+    for i in range(0, len(items), SAVE_BATCH):
+        wp.req("POST", "wc/v3/products/batch", {"update": items[i:i + SAVE_BATCH]})
+        if len(items) > SAVE_BATCH:
+            print(f"  已{label} {min(i + SAVE_BATCH, len(items))}/{len(items)}")
+
+
 def image_source(p):
     return next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_image_source"), "")
 
@@ -738,8 +749,7 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
         elif (not p.get("images") or (clear_temp and src == "temp")) and brand_image(p):
             local.append(tagged(p, [{"id": brand_image(p)}], "brand"))
             counts["brand"] += 1
-    for i in range(0, len(local), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": local[i:i + 50]})
+    save_products(wp, local)
     errors = 0
     for i in range(0, len(remote), 5):
         res, _ = wp.req("POST", "wc/v3/products/batch", {"update": remote[i:i + 5]})
@@ -906,8 +916,7 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
         updates.append({"id": p["id"], "images": [{"id": i} for i in ids],
                         "meta_data": [{"key": "aurora_image_source", "value": "photo"}]})
         print(f"  已上传 {done}/{len(plan)}：{p['name']}（{len(ids)} 张）")
-    for i in range(0, len(updates), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    save_products(wp, updates, "关联图片")
     print(f"\n✓ 已更新 {len(updates)} 款产品，上传 {len(uploaded)} 张图片。需要撤销时运行：run_photos.sh restore {backup}")
 
 
@@ -918,8 +927,7 @@ def cmd_photo_restore(wp, backup_json):
     updates = [dict({"id": p["id"], "name": p["name"], "images": [{"id": i["id"]} for i in p["images"] if i.get("id")],
                      "meta_data": [{"key": "aurora_image_source", "value": p.get("image_source") or ""}]},
                     **({"status": p["status"]} if p.get("status") else {})) for p in snap]
-    for i in range(0, len(updates), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    save_products(wp, updates, "恢复")
     print(f"✓ 已把 {len(updates)} 款产品的名称、图片和上架状态恢复为备份时的样子")
 
 
@@ -957,8 +965,7 @@ def cmd_rename(wp, dry_run=False):
     if dry_run or not updates:
         return
     items = list(updates.values())
-    for i in range(0, len(items), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": items[i:i + 50]})
+    save_products(wp, items, "保存名称")
     print(f"✓ 已修正 {len(items)} 款产品的名称（产品网址不变）")
 
 
@@ -1019,8 +1026,7 @@ def cmd_merge(wp, dry_run=False):
     print(f"同名重复 {len(groups)} 组，{len(drafts)} 款改为草稿")
     if dry_run:
         return
-    for i in range(0, len(keep_updates + drafts), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": (keep_updates + drafts)[i:i + 50]})
+    save_products(wp, keep_updates + drafts)
     print(f"✓ 已合并（改为草稿的产品在后台 产品 → 草稿 里，可以随时恢复）")
 
 
@@ -1044,8 +1050,7 @@ def cmd_mark_review(wp, dry_run=False):
     print(f"待核对名称：{len(rows)} 款，这次变更 {len(updates)} 款")
     if dry_run or not updates:
         return
-    for i in range(0, len(updates), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    save_products(wp, updates, "标记")
     print("✓ 已标记（只在内部预览模式下或管理员登录时显示红色）")
 
 
@@ -1299,8 +1304,7 @@ def cmd_dedupe(wp, dry_run=False):
         print(f"  {p['sku']:<14} {p['name']}  ↔  原有 {twin.get('sku')} {twin['name']}")
     if dry_run or not dups:
         return
-    for i in range(0, len(dups), 50):
-        wp.req("POST", "wc/v3/products/batch", {"update": [{"id": p["id"], "status": "draft"} for p, _ in dups[i:i + 50]]})
+    save_products(wp, [{"id": p["id"], "status": "draft"} for p, _ in dups], "改为草稿")
     print(f"✓ 已把 {len(dups)} 款重复型号改为草稿（后台 产品 → 草稿 可恢复）")
 
 
