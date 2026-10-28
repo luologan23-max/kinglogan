@@ -6,6 +6,7 @@ import io
 import re
 import zipfile
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -43,6 +44,9 @@ class H(BaseHTTPRequestHandler):
         p = u.path.replace("/wp-json/", "")
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        if method == "DELETE" and os.environ.get("MOCK_BLOCK_DELETE"):  # 模拟服务器拦截 DELETE 方法
+            return self.send(405, {"code": "method_not_allowed"})
+        method = q.get("_method", method)  # WordPress 的方法覆盖：POST + _method=DELETE
         if p == "wp/v2/media" and method == "POST":
             disp = self.headers.get("Content-Disposition", "")
             name = disp.split('filename="')[1].rstrip('"')

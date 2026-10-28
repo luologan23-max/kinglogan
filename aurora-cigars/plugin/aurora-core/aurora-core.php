@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.0.0' );
+define( 'AURORA_CORE_VERSION', '1.1.0' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -30,6 +30,7 @@ function aurora_defaults() {
 		'shipping_note' => 'DHL Express 全球直发，15–20 个工作日送达，EXW 条款。货物发出后不接受退货。',
 		'trust_line'    => '中东授权经销商直供 · 每盒可查防伪',
 		'private_mode'  => 1,
+		'integrate'     => 'auto',
 	);
 }
 
@@ -72,6 +73,7 @@ function aurora_settings_page() {
 		'shipping_note' => '物流说明',
 		'trust_line'    => '信任背书文案',
 		'private_mode'  => '内部预览模式（1 = 开启，0 = 关闭，正式上线时改成 0）',
+		'integrate'     => '整合模式（auto = 检测到站点自有店面代码时自动开启；on / off 强制开关）',
 	);
 	echo '<div class="wrap"><h1>Aurora 设置</h1><form method="post" action="options.php">';
 	settings_fields( 'aurora_core' );
@@ -155,6 +157,49 @@ add_filter( 'wp_robots', function ( $robots ) {
 } );
 
 /* -------------------------------------------------------------------------
+ * 整合模式：站点已有自己的店面代码片段（v6 商品卡、产品页 v4、全局导航页脚）时，
+ * 本插件不再输出自己的商品卡、产品页区块、页脚、悬浮按钮和询价清单，
+ * 只保留目录模式、内部预览、年龄验证，并修补站点设计的两处问题（见下）。
+ * ---------------------------------------------------------------------- */
+
+function aurora_defer_ui() {
+	$mode = aurora_opt( 'integrate' );
+	if ( 'on' === $mode || 'off' === $mode ) {
+		return 'on' === $mode;
+	}
+	// 片段由 Code Snippets 在 plugins_loaded 时执行，这里的调用都发生在之后
+	return function_exists( 'aur6_card_open' ) || function_exists( 'aurora_bom_footer' );
+}
+
+// Code Snippets 目前没有在前台输出「站点 CSS」类片段，站点设计系统（Design System v6 等）因此整份失效。
+// 整合模式下由本插件直接从片段表读取已启用的站点 CSS 并输出；即使以后 Code Snippets 恢复输出，重复一份也不影响效果。
+add_action( 'wp_head', function () {
+	if ( ! aurora_defer_ui() ) {
+		return;
+	}
+	global $wpdb;
+	$table = $wpdb->prefix . 'snippets';
+	if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+		return;
+	}
+	$styles = $wpdb->get_col( "SELECT code FROM {$table} WHERE active = 1 AND scope = 'site-css' ORDER BY priority, id" );
+	foreach ( $styles as $i => $css ) {
+		printf( "<style id=\"aurora-site-css-%d\">\n%s\n</style>\n", $i + 1, str_ireplace( '</style', '', $css ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+	}
+}, 30 );
+
+// 站点的商品卡/产品页按钮把询价清单存成数组，需求单页面却按 {items:[…]} 读取。
+// 在任何站点脚本读取之前，把旧的数组格式转换过来（新的写入由 aurora-integrate.js 统一格式）。
+add_action( 'wp_head', function () {
+	if ( ! aurora_defer_ui() ) {
+		return;
+	}
+	?>
+	<script>try{var k='aurora_request_list',v=JSON.parse(localStorage.getItem(k)||'null');if(Array.isArray(v)){localStorage.setItem(k,JSON.stringify({items:v.map(function(i){return{sku:'P'+i.id,name:i.name,brand:i.brand||'',stockStatus:'in_stock',quantity:1};}),lastUpdated:null}));}}catch(e){}</script>
+	<?php
+}, 1 );
+
+/* -------------------------------------------------------------------------
  * 目录模式：关闭购物车与结账
  * ---------------------------------------------------------------------- */
 
@@ -171,6 +216,9 @@ add_action( 'template_redirect', function () {
 
 // 商店列表页：把“加入购物车”换成“查看 / 询价”
 add_filter( 'woocommerce_loop_add_to_cart_link', function ( $html, $product ) {
+	if ( aurora_defer_ui() ) {
+		return $html;
+	}
 	return sprintf(
 		'<a class="aurora-btn aurora-btn--ghost" href="%s">查看详情 · 询价</a>',
 		esc_url( $product->get_permalink() )
@@ -254,7 +302,7 @@ function aurora_wa_link( $text = '' ) {
  * ---------------------------------------------------------------------- */
 
 add_action( 'wp', function () {
-	if ( ! function_exists( 'is_product' ) || ! is_product() ) {
+	if ( aurora_defer_ui() || ! function_exists( 'is_product' ) || ! is_product() ) {
 		return;
 	}
 	remove_action( 'woocommerce_single_product_summary', 'woocommerce_template_single_rating', 10 );
@@ -265,6 +313,9 @@ add_action( 'wp', function () {
 } );
 
 add_action( 'woocommerce_single_product_summary', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	global $product;
 	$brand = aurora_brand( $product );
 	if ( $brand ) {
@@ -273,6 +324,9 @@ add_action( 'woocommerce_single_product_summary', function () {
 }, 4 );
 
 add_action( 'woocommerce_single_product_summary', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	global $product;
 	$en = aurora_meta( $product, 'name_en' );
 	if ( $en && $en !== $product->get_name() ) {
@@ -294,6 +348,9 @@ add_action( 'woocommerce_single_product_summary', function () {
 }, 7 );
 
 add_action( 'woocommerce_single_product_summary', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	global $product;
 	$spec = aurora_spec_line( $product );
 	?>
@@ -326,6 +383,9 @@ add_action( 'woocommerce_single_product_summary', function () {
 
 // 长篇规格、品鉴与物流后移到详情区
 add_filter( 'woocommerce_product_tabs', function ( $tabs ) {
+	if ( aurora_defer_ui() ) {
+		return $tabs;
+	}
 	unset( $tabs['reviews'], $tabs['additional_information'] );
 	$tabs['aurora_spec'] = array(
 		'title'    => '规格参数 Specs',
@@ -387,13 +447,22 @@ function aurora_wa_icon() {
 }
 
 add_action( 'wp_enqueue_scripts', function () {
-	wp_enqueue_style(
-		'aurora-fonts',
-		'https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..700&family=EB+Garamond:ital,wght@0,400..600;1,400&family=Jost:wght@300..600&display=swap',
-		array(),
-		null
-	);
-	wp_enqueue_style( 'aurora-core', AURORA_CORE_URL . 'assets/aurora.css', array(), AURORA_CORE_VERSION );
+	$defer = aurora_defer_ui();
+	if ( ! $defer ) { // 整合模式下站点的全局片段已加载同一组字体
+		wp_enqueue_style(
+			'aurora-fonts',
+			'https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..700&family=EB+Garamond:ital,wght@0,400..600;1,400&family=Jost:wght@300..600&display=swap',
+			array(),
+			null
+		);
+	}
+	wp_enqueue_style( 'aurora-base', AURORA_CORE_URL . 'assets/aurora-base.css', array(), AURORA_CORE_VERSION );
+	if ( $defer ) {
+		wp_enqueue_style( 'aurora-integrate', AURORA_CORE_URL . 'assets/aurora-integrate.css', array( 'aurora-base' ), AURORA_CORE_VERSION );
+		wp_enqueue_script( 'aurora-integrate', AURORA_CORE_URL . 'assets/aurora-integrate.js', array(), AURORA_CORE_VERSION, true );
+	} else {
+		wp_enqueue_style( 'aurora-store', AURORA_CORE_URL . 'assets/aurora-store.css', array( 'aurora-base' ), AURORA_CORE_VERSION );
+	}
 	wp_enqueue_script( 'aurora-core', AURORA_CORE_URL . 'assets/aurora.js', array(), AURORA_CORE_VERSION, true );
 	wp_localize_script( 'aurora-core', 'AURORA', array(
 		'wa'      => aurora_opt( 'whatsapp' ),
@@ -403,7 +472,7 @@ add_action( 'wp_enqueue_scripts', function () {
 }, 20 );
 
 add_action( 'wp_footer', function () {
-	if ( is_admin() ) {
+	if ( is_admin() || aurora_defer_ui() ) {
 		return;
 	}
 	?>
@@ -430,6 +499,15 @@ add_action( 'wp_footer', function () {
 			</footer>
 		</div>
 	</div>
+	<?php
+} );
+
+// 年龄验证在两种模式下都输出
+add_action( 'wp_footer', function () {
+	if ( is_admin() ) {
+		return;
+	}
+	?>
 	<?php if ( empty( $_COOKIE['aurora_age_ok'] ) ) : ?>
 	<div class="aurora-age" role="dialog" aria-modal="true" aria-labelledby="aurora-age-title">
 		<div class="aurora-age__box">
@@ -452,6 +530,9 @@ add_action( 'wp_footer', function () {
  * ---------------------------------------------------------------------- */
 
 add_action( 'woocommerce_shop_loop_item_title', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	global $product;
 	$brand = aurora_brand( $product );
 	if ( $brand ) {
@@ -460,6 +541,9 @@ add_action( 'woocommerce_shop_loop_item_title', function () {
 }, 5 );
 
 add_action( 'woocommerce_after_shop_loop_item_title', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	global $product;
 	$spec = aurora_spec_line( $product );
 	if ( $spec ) {
@@ -468,6 +552,9 @@ add_action( 'woocommerce_after_shop_loop_item_title', function () {
 }, 5 );
 
 add_action( 'woocommerce_before_shop_loop', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	echo do_shortcode( '[aurora_brand_nav]' );
 }, 5 );
 
@@ -498,6 +585,9 @@ function aurora_footer_html() {
 }
 
 add_action( 'astra_footer_before', function () {
+	if ( aurora_defer_ui() ) {
+		return;
+	}
 	echo aurora_footer_html(); // phpcs:ignore WordPress.Security.EscapeOutput
 } );
 

@@ -1,0 +1,33 @@
+/* Aurora 整合模式：站点已有自己的店面代码片段（v6 商品卡、产品页 v4、全局导航/页脚）时加载。
+   只隐藏与之重复的层，每条规则都限定在站点自有结构存在时才生效。 */
+
+/* 商品卡：Astra 默认输出的分类、标题、价格、购物袋按钮、缺货字样 */
+li.product:has(.aur-card) .astra-shop-summary-wrap,
+li.product:has(.aur-card) .ast-on-card-button,
+li.product:has(.aur-card) .ast-shop-product-out-of-stock,
+li.product:has(.aur-card) .ast-woo-product-category { display: none !important; }
+
+/* 商品卡：旧版需求单脚本（片段 13）追加的状态角标、RARE 角标和蓝色按钮，v6 卡片已自带 */
+li.product:has(.aur-card) .aurora-stock-badge,
+li.product:has(.aur-card) .aurora-rare-badge,
+li.product:has(.aur-card) .aurora-add-request { display: none !important; }
+/* 卡片链接里嵌套了 WhatsApp 链接，浏览器会把卡片链接拆成两段；
+   片段 13 的角标落进前面那段空链接，字体加载后撑出一条空隙，这里把不含图片的那段隐藏 */
+li.product:has(.aur-card) a.aur-card-link:not(:has(img)) { display: none !important; }
+
+/* 产品页 v4 已有「WhatsApp 询价 / 加入询价清单」，隐藏片段 13 再注入的一套 */
+body:has(.aur-product-wrap) .aurora-add-request,
+body:has(.aur-product-wrap) .aurora-whatsapp-btn { display: none !important; }
+
+/* 产品页底栏已有大号 WhatsApp 按钮，悬浮按钮会盖住底栏右端，产品页上隐藏它 */
+body:has(.aur-bottom-bar) .aurora-wa-float { display: none !important; }
+
+/* 分类页：站点自有页头已含面包屑和标题，隐藏 WooCommerce 默认的一套 */
+.ast-woocommerce-container:has(.aur-page-header) > .woocommerce-breadcrumb,
+.ast-woocommerce-container:has(.aur-page-header) > .woocommerce-products-header { display: none !important; }
+
+/* 页脚：站点自有页脚存在时，隐藏 Astra 默认的版权栏 */
+body:has(#aurora-footer) .site-footer { display: none !important; }
+
+/* 我的内容页（防伪查验、配送与条款）沿用站点的奶油底色 */
+.aurora-prose { color: var(--ink, var(--au-ink)); }

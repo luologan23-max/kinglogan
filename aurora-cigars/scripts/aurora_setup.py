@@ -171,6 +171,13 @@ class WP:
         except urllib.error.URLError as e:
             raise SystemExit(f"✗ 连接失败 {url}: {e.reason}")
 
+    def delete(self, path, params=None):
+        """删除。有的服务器拦截 DELETE 方法，失败时改用 WordPress 支持的 POST + _method=DELETE。"""
+        try:
+            return self.req("DELETE", path, params=params)[0]
+        except SystemExit:
+            return self.req("POST", path, {}, params=dict(params or {}, _method="DELETE"))[0]
+
     def upload(self, file_path, filename, alt):
         with open(file_path, "rb") as f:
             raw = f.read()
@@ -250,7 +257,7 @@ def cmd_install_plugin(wp, dry_run=False):
         print(f"✓ aurora-core 已安装{'并启用' if res.get('active') else '，但未能启用'}")
     finally:
         try:
-            wp.req("DELETE", f"code-snippets/v1/snippets/{sid}")
+            wp.delete(f"code-snippets/v1/snippets/{sid}")
             print("✓ 已删除临时安装片段")
         except SystemExit as e:
             print(f"! 临时安装片段（ID {sid}）删除失败，请到后台 Snippets 里手动删除：{e}")
@@ -392,6 +399,7 @@ def cmd_import(wp, csv_path, overrides, dry_run=False, limit=None):
         if p.get("sku") in existing:
             p["id"] = existing[p["sku"]]
             p.pop("images", None)  # 已有产品不重复下载图片
+            p.pop("status", None)  # 保留现有状态，不把 dedupe 改成草稿的重复款重新发布
             updates.append(p)
         else:
             creates.append(p)
@@ -415,9 +423,10 @@ PAGE_MARKER = "<!-- aurora:managed -->"
 BACKUP_DIR = os.path.join(CONTENT_DIR, "backup")
 
 
-def cmd_pages(wp, dry_run=False):
-    """创建/更新 Aurora 页面（页面里的短代码依赖 aurora-core，所以插件没启用时拒绝执行）。同 slug 的页面如果不是本脚本建的（没有标记），
-    先把原页面完整备份到 content/backup/，再把原页面 slug 改成「-old」（内容不动），然后新建。"""
+def cmd_pages(wp, dry_run=False, replace=False):
+    """创建/更新 Aurora 页面（页面里的短代码依赖 aurora-core，所以插件没启用时拒绝执行）。
+    同 slug 的页面如果不是本脚本建的（没有标记），默认跳过、不动站点原有页面；
+    加 --replace-pages 时才先把原页面完整备份到 content/backup/，再把它的 slug 改成「-old」（内容不动），然后新建。"""
     if not dry_run and not plugin_active(wp):
         raise SystemExit("✗ aurora-core 插件还没启用，页面里的短代码会原样显示给访客。先运行 install-plugin")
     ids = {}
@@ -432,6 +441,9 @@ def cmd_pages(wp, dry_run=False):
         if found and PAGE_MARKER in found[0]["content"]["raw"]:
             res, _ = wp.req("POST", f"wp/v2/pages/{found[0]['id']}", body)
             print(f"✓ 更新页面 /{slug}/")
+        elif found and not replace:
+            print(f"· /{slug}/ 已是站点原有页面（ID {found[0]['id']}），保留不动")
+            continue
         else:
             if found:
                 old = found[0]
@@ -444,7 +456,7 @@ def cmd_pages(wp, dry_run=False):
             res, _ = wp.req("POST", "wp/v2/pages", body)
             print(f"✓ 新建页面 /{slug}/")
         ids[slug] = res["id"]
-    if not dry_run:
+    if not dry_run and "home" in ids:
         before, _ = wp.req("GET", "wp/v2/settings", params={"_fields": "show_on_front,page_on_front"})
         print(f"· 原首页设置：{before}（需要恢复时改回这个）")
         wp.req("POST", "wp/v2/settings", {"show_on_front": "page", "page_on_front": ids["home"],
@@ -694,6 +706,75 @@ def cmd_audit(wp, out_path):
     print("  把这个文件拖进和 Claude 的对话里。里面没有任何密码。")
 
 
+RESTORE_SLUGS = ["home", "about", "faq", "wholesale"]
+
+
+def find_page(wp, slug):
+    found, _ = wp.req("GET", "wp/v2/pages", params={"slug": slug, "status": "publish,draft,private",
+                                                     "context": "edit", "_fields": "id,slug,status,content"})
+    return found[0] if found else None
+
+
+def cmd_restore_pages(wp, dry_run=False):
+    """把 pages 命令改名为「-old」的站点原有页面恢复到原地址，并恢复原首页；
+    本脚本建的同名页面改为草稿、地址改成 aurora-xxx（不删除，随时可再启用）。"""
+    restored = {}
+    for slug in RESTORE_SLUGS:
+        old = find_page(wp, f"{slug}-old")
+        if not old:
+            print(f"· /{slug}-old/ 不存在，跳过")
+            continue
+        current = find_page(wp, slug)
+        if current and PAGE_MARKER not in current["content"]["raw"]:
+            print(f"! /{slug}/ 上是另一个不是本脚本建的页面（ID {current['id']}），为安全起见跳过")
+            continue
+        if dry_run:
+            print(f"[dry-run] /{slug}-old/（ID {old['id']}）→ /{slug}/" + (f"；本脚本的页面 ID {current['id']} → 草稿 /aurora-{slug}/" if current else ""))
+            continue
+        if current:
+            wp.req("POST", f"wp/v2/pages/{current['id']}", {"slug": f"aurora-{slug}", "status": "draft"})
+        res, _ = wp.req("POST", f"wp/v2/pages/{old['id']}", {"slug": slug})
+        if res.get("slug") != slug:
+            print(f"! 页面 ID {old['id']} 的地址变成了 /{res.get('slug')}/，请到后台检查")
+        else:
+            print(f"✓ 已恢复 /{slug}/（ID {old['id']}）" + (f"，本脚本的同名页面改为草稿 /aurora-{slug}/" if current else ""))
+        restored[slug] = old["id"]
+    if "home" in restored and not dry_run:
+        wp.req("POST", "wp/v2/settings", {"show_on_front": "page", "page_on_front": restored["home"]})
+        print(f"✓ 网站首页已恢复为原来的页面（ID {restored['home']}）")
+
+
+def model_key(name):
+    """型号比对用：去重音、统一 No. 写法，只保留字母数字。"""
+    s = unicodedata.normalize("NFKD", str(name or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower().replace("no.", "no ")
+    return re.sub(r"[^a-z0-9]+", "", s)
+
+
+def cmd_dedupe(wp, dry_run=False):
+    """标准目录里与站点原有产品同型号的那部分改为草稿（不删除，后台可一键恢复）。"""
+    with open(os.path.join(CONTENT_DIR, "catalog.csv"), newline="", encoding="utf-8") as f:
+        ours = {r["SKU"] for r in csv.DictReader(f)}
+    products = wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,name,sku,status,meta_data"})
+    existing = {model_key(p["name"]): p for p in products if p.get("sku") not in ours}
+    dups = []
+    for p in products:
+        if p.get("sku") not in ours or p.get("status") != "publish":
+            continue
+        en = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_name_en"), "")
+        twin = existing.get(model_key(en))
+        if twin:
+            dups.append((p, twin))
+    print(f"标准目录中与原有产品重复的型号：{len(dups)} 款")
+    for p, twin in dups:
+        print(f"  {p['sku']:<14} {p['name']}  ↔  原有 {twin.get('sku')} {twin['name']}")
+    if dry_run or not dups:
+        return
+    for i in range(0, len(dups), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": [{"id": p["id"], "status": "draft"} for p, _ in dups[i:i + 50]]})
+    print(f"✓ 已把 {len(dups)} 款重复型号改为草稿（后台 产品 → 草稿 可恢复）")
+
+
 def cmd_preview_link(wp):
     data, _ = wp.req("GET", "wp/v2/settings", params={"_fields": "aurora_preview_key"})
     key = (data or {}).get("aurora_preview_key")
@@ -718,7 +799,18 @@ def cmd_menu(wp, dry_run=False):
     print(f"✓ 已创建主导航（{len(MENU)} 项）并设为 primary 位置")
 
 
+INSTALLER_NAME = "Aurora 一次性安装器（会自动删除）"
+
+
 def cmd_cleanup(wp, dry_run=False):
+    # 之前 install-plugin 没删掉的临时安装片段
+    for sn in wp.get_or_none("code-snippets/v1/snippets") or []:
+        if sn.get("name") == INSTALLER_NAME:
+            if dry_run:
+                print(f"[dry-run] 将删除遗留的临时安装片段 ID {sn['id']}")
+                continue
+            wp.delete(f"code-snippets/v1/snippets/{sn['id']}")
+            print(f"✓ 已删除遗留的临时安装片段 ID {sn['id']}")
     plugins, _ = wp.req("GET", "wp/v2/plugins", params={"_fields": "plugin,name,status"})
     for p in plugins:
         if p["plugin"].split("/")[0] in REDUNDANT_PLUGINS and p["status"] == "active":
@@ -732,7 +824,7 @@ def cmd_cleanup(wp, dry_run=False):
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
-                                       "preview-link", "audit", "all"])
+                                       "preview-link", "audit", "restore-pages", "dedupe", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -742,6 +834,7 @@ def main():
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")
+    ap.add_argument("--replace-pages", action="store_true", help="pages 命令：同名的站点原有页面改名为 -old 后替换（默认保留不动）")
     args = ap.parse_args()
 
     overrides = {}
@@ -772,13 +865,17 @@ def main():
     if args.command in ("images", "all"):
         cmd_images(wp, args.photos, args.urls, args.clear_temp, args.dry_run)
     if args.command in ("pages", "all"):
-        cmd_pages(wp, args.dry_run)
+        cmd_pages(wp, args.dry_run, args.replace_pages)
     if args.command in ("menu", "all"):
         cmd_menu(wp, args.dry_run)
     if args.command == "cleanup":
         cmd_cleanup(wp, args.dry_run)
     if args.command == "audit":
         cmd_audit(wp, args.out)
+    if args.command == "restore-pages":
+        cmd_restore_pages(wp, args.dry_run)
+    if args.command == "dedupe":
+        cmd_dedupe(wp, args.dry_run)
     if args.command in ("preview-link", "all") and not args.dry_run:
         cmd_preview_link(wp)
 

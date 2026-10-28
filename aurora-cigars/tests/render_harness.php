@@ -36,7 +36,7 @@ do_action( 'wp_footer' );
 $footer = ob_get_clean();
 $brands = $GLOBALS['shortcodes']['aurora_brands']( array() );
 
-$css = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.css' );
+$css = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora-base.css' ) . file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora-store.css' );
 $js  = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.js' );
 $cfg = json_encode( $GLOBALS['localized'][1] );
 ?>

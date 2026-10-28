@@ -18,10 +18,22 @@
 | `content/pages/*.html` | 首页、关于、防伪查验、常见问题、批发合作、配送与条款 |
 | `content/images/*.jpg` | 10 个品牌 + Aurora 通用的产品图（1600×1600，自行渲染，无版权问题） |
 | `tools/render_cigar.html`、`tools/render_all.js` | 品牌产品图渲染器，改了品牌后运行 `node tools/render_all.js` 重新出图 |
+| `scripts/run_all.sh` | Mac 一键上线（见下文） |
+| `scripts/run_fix.sh` | Mac 一键设计修复：更新插件、清理、恢复原有页面、重复型号改草稿、导出诊断包 |
 | `scripts/build_zip.sh` | 修改插件后重新打包 |
-| `tests/` | 测试（模拟环境渲染、浏览器交互、模拟 WooCommerce API） |
+| `tests/` | 测试（模拟环境渲染、浏览器交互、模拟 WooCommerce API、用诊断包离线还原线上页面） |
 
 ## aurora-core 插件做了什么
+
+插件有两种前台模式，在「Aurora 设置」里的「整合模式」切换（默认 auto，自动判断）：
+
+- **整合模式**：站点已经有自己的店面代码片段（Code Snippets 里的 v6 商品卡、产品页 v4、全局导航/页脚）时自动启用。店面外观完全交给站点自己的设计，插件只做三件事：
+  1. 输出站点的设计系统 CSS 片段（片段 11，原来因为作用域是 site-css 而一直没有输出到页面）
+  2. 隐藏和站点设计重复的层：Astra 默认的卡片标题/价格/购物袋按钮、旧需求单脚本加的角标和蓝色按钮、重复的面包屑和页脚、产品页上的悬浮 WhatsApp
+  3. 修好站点自带的「＋」和「加入询价清单」按钮（原来 onclick 里的引号把属性截断了，点了没反应），并把旧的数组格式清单统一成需求单页面读取的 `{items:[…]}` 格式
+- **店面模式**：没有这些片段时使用下面这一整套插件自带的店面
+
+两种模式都保留：目录模式、年龄验证、内部预览模式、「价格请询价」、短代码。
 
 - **目录模式**：产品不可购买，购物车和结账页跳回商店，列表页按钮改成「查看详情 · 询价」，去掉头部购物车图标
 - **产品详情页**：手机首屏顺序为 图片 → 品牌 → 名称 → 现货 / 防伪 / 限量标签 → 价格 → 盒数选择 → WhatsApp 一键询价 → 加入询价清单；规格表和配送说明放到下方标签页
@@ -53,7 +65,15 @@
 cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_all.sh
 ```
 
-`run_all.sh` 会依次完成这些：安装并启用插件（借助站点上的 Code Snippets 临时建一个只有管理员能调用的安装接口，装完自动删除）→ 店铺设置 → 停用多余插件 → 导入 80 款 → 配品牌图 → 建页面（原有同名页面先备份再改名，内容不动）→ 建导航 → 输出预览分享链接。
+`run_all.sh` 会依次完成这些：安装并启用插件（借助站点上的 Code Snippets 临时建一个只有管理员能调用的安装接口，装完自动删除）→ 店铺设置 → 停用多余插件 → 导入 80 款 → 配品牌图 → 建页面（站点原有的同名页面保留不动，只补上缺的）→ 建导航 → 输出预览分享链接。
+
+## 一键设计修复（插件 1.0 已经装过时用）
+
+```bash
+cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kinglogan/archive/refs/heads/claude/minimax-model-setup-dfLij.zip && unzip -qo aurora.zip && AURORA_APP_PASSWORD='xxxx xxxx xxxx xxxx xxxx xxxx' bash kinglogan-claude-minimax-model-setup-dfLij/aurora-cigars/scripts/run_fix.sh
+```
+
+`run_fix.sh` 依次：把插件更新到 1.1（整合模式）→ 删除遗留的临时安装片段、停用多余插件 → 把被 1.0 改名成 `-old` 的原有页面（首页、关于、常见问题、批发）改回原网址，并恢复原来的网站首页，本脚本建的同名页面改成草稿 `aurora-*` → 标准目录里和原有产品同型号的那部分改成草稿 → 在桌面导出只读诊断包 `aurora-audit.zip`。都不删除任何内容，后台随时可以恢复。
 
 ## 上线步骤
 
@@ -77,8 +97,13 @@ python3 aurora_setup.py images --photos ~/实拍图                 # 以后有�
 python3 aurora_setup.py images --urls temp_images.csv            # 内部预览用的临时网图（两列：sku,url）
 python3 aurora_setup.py images --clear-temp                      # 上线前把临时网图全部换回品牌图
 python3 aurora_setup.py menu                                    # 创建主导航
-python3 aurora_setup.py cleanup                                 # 停用 YITH、Click to Chat、PayPal
+python3 aurora_setup.py cleanup                                 # 停用 YITH、Click to Chat、PayPal，删除遗留安装片段
+python3 aurora_setup.py restore-pages                           # 把 -old 页面改回原网址，恢复原首页
+python3 aurora_setup.py dedupe --dry-run                        # 列出标准目录里与原有产品重复的型号；去掉 --dry-run 改为草稿
+python3 aurora_setup.py audit                                   # 只读诊断包（主题、插件、片段、页面 HTML 和 CSS），默认存到桌面
 ```
+
+`pages` 默认不碰站点原有的同名页面；确实要替换时加 `--replace-pages`（原页面改名为 `-old`，内容备份到 `content/backup/`）。`import` 更新已有产品时不改它的发布状态，所以 dedupe 改成草稿的重复款不会被重新发布。
 
 品牌分类会自动对上 `brands.json` 里的介绍。CSV 里的品牌写「Cohiba」「高希霸」或「cohiba」都可以，有没有重音（Partagás / Partagas）也都能识别。
 
@@ -108,7 +133,11 @@ SKU / 编号 · 中文名 · English Name · 品牌 · 价格（可以写成 "US
 php tests/build_preview.php > /tmp/preview.html     # 整站静态预览（示例产品）
 php tests/render_harness.php > /tmp/normal.html && php tests/render_harness.php limited > /tmp/limited.html
 node tests/browser_test.js /tmp/normal.html /tmp/limited.html /tmp      # 需要 playwright
-python3 tests/mock_wc_server.py 8765 &                                   # 模拟 WooCommerce API
+php tests/integrate_mode_test.php                                         # 整合模式（站点有自己的店面片段时）
+php tests/private_mode_test.php anon                                      # 内部预览模式：anon / loggedin / key-good / key-bad / off
+node tests/integrate_bridge_test.js <诊断包目录> <vendor 目录>            # 用线上页面测「＋」和「加入询价清单」
+node tests/render_audit.js <诊断包目录> <vendor 目录> <输出目录> [CSS]      # 离线还原线上页面截图
+python3 tests/mock_wc_server.py 8765 &                                   # 模拟 WooCommerce API（MOCK_BLOCK_DELETE=1 模拟拦截 DELETE）
 AURORA_SITE=http://127.0.0.1:8765 AURORA_USER=tester AURORA_APP_PASSWORD='abcd efgh ijkl' \
   python3 scripts/aurora_setup.py all tests/sample_products.csv
 ```

@@ -122,7 +122,7 @@ do_action( 'wp_footer' );
 $footer = ob_get_clean();
 
 $brands_json = json_decode( file_get_contents( dirname( __DIR__ ) . '/content/brands.json' ), true );
-$css = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.css' );
+$css = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora-base.css' ) . file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora-store.css' );
 $js  = file_get_contents( dirname( __DIR__ ) . '/plugin/aurora-core/assets/aurora.js' );
 $menu = array( '首页' => 'home', '雪茄 Cigars' => 'shop', '产品页示例' => 'product', '常见问题' => 'faq' );
 ?>

@@ -1,19 +1,4 @@
-/* Aurora Cigars — 英国老钱风：黑 · 白 · 金，极致留白 */
-:root {
-	--au-black: #0e0d0b;
-	--au-ink: #1c1a17;
-	--au-paper: #faf8f4;
-	--au-cream: #f1ece2;
-	--au-line: #e2dbcd;
-	--au-muted: #7a7266;
-	--au-gold: #b08d57;
-	--au-gold-deep: #8c6d3f;
-	--au-wa: #25d366;
-	--au-serif-display: "Bodoni Moda", "Didot", "Times New Roman", serif;
-	--au-serif: "EB Garamond", "Garamond", "Songti SC", "Noto Serif SC", serif;
-	--au-sans: "Jost", "Helvetica Neue", "PingFang SC", sans-serif;
-	--au-radius: 2px;
-}
+/* Aurora 自有店面样式：全局排版、产品页、商品卡、页脚、悬浮按钮、询价清单（站点没有自己的店面设计时才加载） */
 
 body {
 	background: var(--au-paper);
@@ -32,46 +17,6 @@ h1, h2, h3, .site-title, .product_title, .woocommerce-loop-product__title,
 }
 
 a { color: var(--au-gold-deep); }
-
-[class^="aurora-"], [class^="aurora-"] *, [class*=" aurora-"] { box-sizing: border-box; }
-
-/* ---------- 按钮 ---------- */
-.aurora-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: .55em;
-	min-height: 48px;
-	padding: .8em 1.6em;
-	border: 1px solid var(--au-black);
-	border-radius: var(--au-radius);
-	background: var(--au-black);
-	color: #fff;
-	font-family: var(--au-sans);
-	font-size: 14px;
-	font-weight: 500;
-	letter-spacing: .14em;
-	text-transform: uppercase;
-	text-decoration: none;
-	cursor: pointer;
-	transition: background .2s, color .2s, border-color .2s;
-}
-.aurora-btn:hover { background: var(--au-ink); color: #fff; }
-.aurora-btn--ghost { background: transparent; color: var(--au-black); }
-.aurora-btn--ghost:hover { background: var(--au-black); color: #fff; }
-.aurora-btn--gold { background: var(--au-gold); border-color: var(--au-gold); }
-.aurora-btn--gold:hover { background: var(--au-gold-deep); border-color: var(--au-gold-deep); }
-.aurora-btn--wa { background: var(--au-wa); border-color: var(--au-wa); color: #fff; }
-.aurora-btn--wa:hover { background: #1ebe5b; border-color: #1ebe5b; color: #fff; }
-.aurora-link {
-	background: none;
-	border: 0;
-	color: var(--au-muted);
-	font-family: var(--au-sans);
-	font-size: 13px;
-	text-decoration: underline;
-	cursor: pointer;
-}
 
 /* ---------- 产品详情页 ---------- */
 .single-product div.product .summary {
@@ -115,7 +60,6 @@ a { color: var(--au-gold-deep); }
 	font-size: 30px;
 	color: var(--au-black);
 }
-.aurora-por { font-family: var(--au-sans); font-size: 15px; letter-spacing: .08em; color: var(--au-gold-deep); }
 .single-product .summary .price:has(.aurora-por)::after { content: none; }
 .single-product .summary .price::after {
 	content: " / 盒";
@@ -238,64 +182,6 @@ a { color: var(--au-gold-deep); }
 	color: #8e8679;
 }
 
-/* ---------- 内容页 ---------- */
-.aurora-prose { max-width: 760px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) 16px; }
-.aurora-prose h1 { text-align: center; font-size: clamp(30px, 5vw, 44px); margin: 0 0 .2em; }
-.aurora-prose .aurora-prose__en { text-align: center; font-style: italic; color: var(--au-muted); margin: 0 0 2.4em; }
-.aurora-prose h2 { font-size: 24px; margin: 2em 0 .5em; }
-.aurora-prose details { border-bottom: 1px solid var(--au-line); padding: 1em 0; }
-.aurora-prose summary { cursor: pointer; font-family: var(--au-serif-display); font-size: 19px; color: var(--au-black); }
-.aurora-prose details p { margin: .8em 0 0; color: var(--au-ink); }
-.aurora-steps { counter-reset: step; list-style: none; padding: 0; }
-.aurora-steps li { counter-increment: step; position: relative; padding: 0 0 1.2em 3em; }
-.aurora-steps li::before {
-	content: counter(step);
-	position: absolute;
-	left: 0;
-	top: .1em;
-	width: 2em;
-	height: 2em;
-	border: 1px solid var(--au-gold);
-	border-radius: 50%;
-	text-align: center;
-	line-height: 2em;
-	font-family: var(--au-sans);
-	font-size: 13px;
-	color: var(--au-gold-deep);
-}
-.aurora-brand-intro { max-width: 760px; margin: 0 auto 32px; text-align: center; color: var(--au-muted); }
-
-/* ---------- 品牌宫格 [aurora_brands] ---------- */
-.aurora-brands {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 1px;
-	background: var(--au-line);
-	border: 1px solid var(--au-line);
-}
-.aurora-brands__item {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: .3em;
-	min-height: 200px;
-	padding: 28px 16px;
-	background: var(--au-paper);
-	color: var(--au-black);
-	text-decoration: none;
-	transition: background .2s;
-}
-.aurora-brands__item:hover { background: var(--au-cream); }
-.aurora-brands__img { max-width: 120px; height: auto; margin-bottom: .6em; }
-.aurora-brands__name { font-family: var(--au-serif-display); font-size: 24px; }
-.aurora-brands__count {
-	font-family: var(--au-sans);
-	font-size: 12px;
-	letter-spacing: .14em;
-	color: var(--au-muted);
-}
-
 /* ---------- 悬浮按钮 ---------- */
 .aurora-wa-float {
 	position: fixed;
@@ -383,59 +269,8 @@ a { color: var(--au-gold-deep); }
 .aurora-drawer__empty[hidden] { display: none; }
 .aurora-drawer__foot { display: flex; flex-direction: column; gap: 10px; padding: 20px 24px; border-top: 1px solid var(--au-line); }
 
-/* ---------- 年龄验证 ---------- */
-.aurora-age {
-	position: fixed;
-	inset: 0;
-	z-index: 10000;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 16px;
-	background: var(--au-black);
-	color: #fff;
-}
-.aurora-age[hidden] { display: none; }
-.aurora-age__box { max-width: 520px; text-align: center; }
-.aurora-age__mark {
-	margin: 0 0 1.5em;
-	font-family: var(--au-serif-display);
-	font-size: 28px;
-	letter-spacing: .4em;
-	color: var(--au-gold);
-}
-.aurora-age h2 { margin: 0; color: #fff; font-size: clamp(24px, 5vw, 34px); }
-.aurora-age__en { margin: .4em 0 2em; font-style: italic; color: #bfb6a6; }
-.aurora-age__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
-.aurora-age .aurora-btn--ghost { border-color: #5a544b; color: #fff; }
-.aurora-age__note { margin-top: 2.2em; font-size: 14px; color: #8e8679; }
-
-/* ---------- 首页区块 ---------- */
-.aurora-hero { padding: clamp(64px, 12vw, 140px) 16px clamp(48px, 8vw, 96px); text-align: center; }
-.aurora-hero__eyebrow {
-	font-family: var(--au-sans);
-	font-size: 12px;
-	letter-spacing: .32em;
-	text-transform: uppercase;
-	color: var(--au-gold-deep);
-}
-.aurora-hero h1 { margin: .4em 0 .3em; font-size: clamp(36px, 7vw, 72px); line-height: 1.08; }
-.aurora-hero p { max-width: 560px; margin: 0 auto 2em; color: var(--au-muted); }
-.aurora-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
-.aurora-section { max-width: 1120px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) 16px; }
-.aurora-section__title { margin: 0 0 1.2em; text-align: center; font-size: clamp(26px, 4vw, 38px); }
-.aurora-pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; text-align: center; }
-.aurora-pillars h3 { font-size: 20px; margin: 0 0 .4em; }
-.aurora-pillars p { margin: 0; color: var(--au-muted); font-size: 16px; }
-.aurora-band { background: var(--au-black); color: #e8e1d4; text-align: center; }
-.aurora-band .aurora-section__title { color: #fff; }
-.aurora-shipping small { color: var(--au-muted); }
-
 @media (max-width: 768px) {
 	body { font-size: 17px; }
-	.aurora-brands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-	.aurora-brands__item { min-height: 150px; }
-	.aurora-pillars { grid-template-columns: 1fr; gap: 28px; }
 	.aurora-footer__inner { grid-template-columns: 1fr; gap: 20px; padding-top: 48px; }
 	.single-product div.product .summary { margin-top: 18px; }
 	/* 产品页已有大号 WhatsApp 按钮，隐藏悬浮按钮，避免遮挡；清单按钮下移 */
