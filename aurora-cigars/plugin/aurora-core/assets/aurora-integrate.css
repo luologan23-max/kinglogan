@@ -11,16 +11,37 @@ li.product:has(.aur-card) .ast-woo-product-category { display: none !important; 
 li.product:has(.aur-card) .aurora-stock-badge,
 li.product:has(.aur-card) .aurora-rare-badge,
 li.product:has(.aur-card) .aurora-add-request { display: none !important; }
-/* 卡片链接里嵌套了 WhatsApp 链接，浏览器会把卡片链接拆成两段；
-   片段 13 的角标落进前面那段空链接，字体加载后撑出一条空隙，这里把不含图片的那段隐藏 */
-li.product:has(.aur-card) a.aur-card-link:not(:has(img)) { display: none !important; }
+/* 卡片链接里嵌套了 WhatsApp 链接，浏览器会把卡片链接拆成几段；
+   片段 13 的角标落进卡片最前面那段空链接，字体加载后撑出一条空隙，这里把那段隐藏。
+   只限 .aur-card 的直接子元素：「＋」按钮所在的那段也不含图片，不能一起隐藏 */
+li.product .aur-card > a.aur-card-link:not(:has(img)) { display: none !important; }
+
+/* 商品卡的「＋ / WhatsApp」悬停才出现，手机上没有悬停，「＋」永远点不到。
+   触屏设备上常显「＋」；WhatsApp 卡片底部已有一个，这里不重复 */
+@media (hover: none) {
+	li.product .aur-card-actions { opacity: 1; transform: none; }
+	li.product .aur-card-actions > a.aur-action-btn { display: none; }
+}
+
+/* Astra 给所有 <button> 加了内边距、4px 圆角和阴影。站点设计是直角，
+   底栏「− / +」和卡片「＋」这种固定尺寸的图标按钮还会被内边距撑大 */
+.aur-filter-btn, .aur-brand-tab, .aur-action-btn, .aur-btn-wa, .aur-btn-enquiry,
+.aur-bb-qty-btn, .aur-bb-btn, .aur-bb-list { border-radius: 0; box-shadow: none; }
+.aur-bb-qty-btn, .aur-action-btn { padding: 0; }
 
 /* 产品页 v4 已有「WhatsApp 询价 / 加入询价清单」，隐藏片段 13 再注入的一套 */
 body:has(.aur-product-wrap) .aurora-add-request,
 body:has(.aur-product-wrap) .aurora-whatsapp-btn { display: none !important; }
 
-/* 产品页底栏已有大号 WhatsApp 按钮，悬浮按钮会盖住底栏右端，产品页上隐藏它 */
-body:has(.aur-bottom-bar) .aurora-wa-float { display: none !important; }
+/* 全局页脚片段（片段 15）的悬浮 WhatsApp：产品页底栏已有大号按钮，会被它盖住右端；
+   商店页的 v6 悬浮按钮（连同询价清单计数）位置几乎重合，两个叠在一起。这两种情况下隐藏它 */
+body:has(.aur-bottom-bar) .aurora-wa-float,
+body:has(.aur-enquiry-float) .aurora-wa-float { display: none !important; }
+
+/* 产品页规格表是两列，规格项为单数时最后一行右边空出一块灰底。
+   通栏项只会出现在开头（品牌）和结尾（口感强度），据此找出落单的那一项让它占满一行 */
+.aur-spec-grid > .aur-sg-wide:first-child ~ .aur-sg:not(.aur-sg-wide):nth-child(even):is(:last-child, :has(+ .aur-sg-wide:last-child)),
+.aur-spec-grid:not(:has(> .aur-sg-wide:first-child)) > .aur-sg:not(.aur-sg-wide):nth-child(odd):is(:last-child, :has(+ .aur-sg-wide:last-child)) { grid-column: 1 / -1; }
 
 /* 分类页：站点自有页头已含面包屑和标题，隐藏 WooCommerce 默认的一套 */
 .ast-woocommerce-container:has(.aur-page-header) > .woocommerce-breadcrumb,

@@ -48,7 +48,8 @@ async function serve(route) {
 	fs.mkdirSync(outDir, { recursive: true });
 	const browser = await chromium.launch({ proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined });
 	for (const [w, h, tag] of [[1440, 900, 'desktop'], [390, 844, 'mobile']]) {
-		const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: tag === 'mobile' ? 2 : 1 });
+		const mobile = tag === 'mobile';  // 手机按触屏模拟（没有悬停）
+		const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: mobile ? 2 : 1, hasTouch: mobile, isMobile: mobile });
 		await ctx.addCookies([{ name: 'aurora_age_ok', value: '1', domain: site.host, path: '/' }]);
 		await ctx.route('**/*', serve);
 		for (const [label, info] of Object.entries(report.pages_html)) {
@@ -60,6 +61,18 @@ async function serve(route) {
 			await page.goto(info.url, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
 			if (removeSel) await page.evaluate((sel) => document.querySelectorAll(sel).forEach((e) => e.remove()), removeSel);
 			if (injectCss) await page.addStyleTag({ content: fs.readFileSync(injectCss, 'utf8') });
+			// 整页截图时 Chromium 会临时丢掉触屏模拟（hover:none 不再成立），把只在触屏生效的规则复制成普通规则
+			if (mobile) await page.evaluate(() => {
+				const css = [];
+				for (const sh of document.styleSheets) {
+					let rules;
+					try { rules = sh.cssRules; } catch (e) { continue; }
+					for (const r of rules) if (r.media && /hover:\s*none/.test(r.media.mediaText)) for (const x of r.cssRules) css.push(x.cssText);
+				}
+				const st = document.createElement('style');
+				st.textContent = css.join('\n');
+				document.head.appendChild(st);
+			});
 			await page.waitForTimeout(800);
 			const out = path.join(outDir, `${label}-${tag}.png`);
 			await page.screenshot({ path: out, fullPage: true });
