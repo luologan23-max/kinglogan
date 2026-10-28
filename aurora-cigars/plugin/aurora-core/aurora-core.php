@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.2.2
+ * Version: 1.2.3
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.2.2' );
+define( 'AURORA_CORE_VERSION', '1.2.3' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -276,6 +276,59 @@ add_action( 'template_redirect', function () {
 		exit;
 	}
 } );
+
+// 拿不准官方名称的产品（meta aurora_review 有内容）：前台名称标红并注明「名称待核对」，后台产品列表也标出来。
+// 只在内部预览模式下或管理员登录时显示，正式对外后访客看不到。核对完清空 aurora_review 即可。
+function aurora_review_ids() {
+	$ids = get_transient( 'aurora_review_ids' );
+	if ( false === $ids ) {
+		$ids = get_posts( array(
+			'post_type'   => 'product',
+			'post_status' => 'any',
+			'fields'      => 'ids',
+			'numberposts' => -1,
+			'meta_query'  => array( array( 'key' => 'aurora_review', 'value' => '', 'compare' => '!=' ) ),
+		) );
+		set_transient( 'aurora_review_ids', $ids, HOUR_IN_SECONDS );
+	}
+	return array_map( 'intval', (array) $ids );
+}
+
+foreach ( array( 'added_post_meta', 'updated_post_meta', 'deleted_post_meta' ) as $aurora_hook ) {
+	add_action( $aurora_hook, function ( $mid, $pid, $key ) {
+		if ( 'aurora_review' === $key ) {
+			delete_transient( 'aurora_review_ids' );
+		}
+	}, 10, 3 );
+}
+
+add_action( 'wp_head', function () {
+	if ( ! aurora_private_mode() && ! current_user_can( 'edit_products' ) ) {
+		return;
+	}
+	$names = $tags = array();
+	foreach ( aurora_review_ids() as $id ) {
+		// 商品卡（站点 v6 卡片 / Astra 默认标题）和产品页（站点产品页 v4 / WooCommerce 默认标题）
+		$names[] = "li.product.post-$id .aur-card-name, li.product.post-$id .woocommerce-loop-product__title";
+		$names[] = "body.postid-$id .aur-product-name-cn, body.postid-$id .aur-product-name-en, body.postid-$id .aur-mi-name-cn, body.postid-$id .product_title";
+		$tags[]  = "li.product.post-$id .aur-card-name::after, body.postid-$id .aur-product-name-cn::after, body.postid-$id .product_title::after";
+	}
+	if ( ! $names ) {
+		return;
+	}
+	printf(
+		"<style id=\"aurora-review-css\">%s{color:#C62828!important}%s{content:\" · 名称待核对\";font:500 11px/1.4 var(--sans,sans-serif);letter-spacing:.06em;color:#C62828;vertical-align:middle}</style>\n",
+		implode( ',', $names ),
+		implode( ',', $tags )
+	); // phpcs:ignore WordPress.Security.EscapeOutput
+}, 40 );
+
+add_filter( 'display_post_states', function ( $states, $post ) {
+	if ( 'product' === $post->post_type && get_post_meta( $post->ID, 'aurora_review', true ) ) {
+		$states['aurora_review'] = '<span style="color:#C62828">名称待核对</span>';
+	}
+	return $states;
+}, 10, 2 );
 
 // 站点片段把产品中文名存在 _name_cn 里，WooCommerce 接口默认不返回下划线开头的字段。
 // 实拍图按中文文件名配图时需要它，这里只读地加到产品接口里。

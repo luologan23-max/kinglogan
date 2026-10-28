@@ -962,6 +962,93 @@ def cmd_rename(wp, dry_run=False):
     print(f"✓ 已修正 {len(items)} 款产品的名称（产品网址不变）")
 
 
+MERGE_FIELDS = ("regular_price", "sale_price", "description", "short_description", "weight")
+OWN_META = {"aurora_merged_into", "aurora_image_source", "aurora_review"}  # 本脚本自己的标记，不当作产品资料合并
+
+
+def cmd_merge(wp, dry_run=False):
+    """站点原有产品里完全同名的重复款合并：每组保留资料最全的一款（同样全时保留编号小的，也就是最早的网址），
+    另一款有、保留款缺的资料（价格、描述、库存数量、图片、分类、自定义字段）补到保留款上，
+    再把另一款改为草稿并记下 aurora_merged_into。不删除任何产品。"""
+    with open(os.path.join(CONTENT_DIR, "catalog.csv"), newline="", encoding="utf-8") as f:
+        ours = {r["SKU"] for r in csv.DictReader(f)}
+    products = wp.get_all("wc/v3/products", {"status": "publish", "_fields": "id,sku,name,status,images,categories,"
+                                              "meta_data,manage_stock,stock_quantity," + ",".join(MERGE_FIELDS)})
+    groups = {}
+    for p in products:
+        if p.get("sku") not in ours and p.get("status") == "publish":  # 已改草稿的不再参与，重复运行不会出错
+            groups.setdefault("".join(name_tokens(p["name"])), []).append(p)
+    groups = [g for g in groups.values() if len(g) > 1]
+    if not groups:
+        print("没有同名重复的产品")
+        return
+
+    def richness(p):
+        meta = [m for m in p.get("meta_data", []) if not m["key"].startswith("_") and m["key"] not in OWN_META
+                and m.get("value") not in ("", None)]
+        return sum(1 for k in MERGE_FIELDS if p.get(k)) + len(p.get("images") or []) + len(meta) + (1 if p.get("manage_stock") else 0)
+
+    num = lambda p: int(re.sub(r"\D", "", p.get("sku") or "") or 10 ** 9)
+    keep_updates, drafts = [], []
+    for g in groups:
+        keeper = max(g, key=lambda p: (richness(p), -num(p)))
+        fill, meta_have = {}, {m["key"] for m in keeper.get("meta_data", [])}
+        for other in (p for p in g if p is not keeper):
+            for k in MERGE_FIELDS:
+                if not keeper.get(k) and other.get(k) and k not in fill:
+                    fill[k] = other[k]
+            if not keeper.get("manage_stock") and other.get("manage_stock") and "stock_quantity" not in fill:
+                fill.update(manage_stock=True, stock_quantity=other.get("stock_quantity"))
+            if not keeper.get("images") and other.get("images") and "images" not in fill:
+                fill["images"] = [{"id": i["id"]} for i in other["images"]]
+            cats = {c["id"] for c in keeper.get("categories", [])}
+            extra = [c for c in other.get("categories", []) if c["id"] not in cats]
+            if extra:
+                fill["categories"] = [{"id": c["id"]} for c in keeper.get("categories", []) + extra]
+            for m in other.get("meta_data", []):
+                if (not m["key"].startswith("_") and m["key"] not in OWN_META and m["key"] not in meta_have
+                        and m.get("value") not in ("", None)):
+                    fill.setdefault("meta_data", []).append({"key": m["key"], "value": m["value"]})
+                    meta_have.add(m["key"])
+            drafts.append({"id": other["id"], "status": "draft",
+                           "meta_data": [{"key": "aurora_merged_into", "value": keeper.get("sku") or str(keeper["id"])}]})
+            print(f"  {other.get('sku')} {other['name']} → 合并到 {keeper.get('sku')}（{other.get('sku')} 改为草稿）")
+        if fill:
+            keep_updates.append(dict(fill, id=keeper["id"]))
+            print(f"    {keeper.get('sku')} 补上：{', '.join(k for k in fill if k != 'id')}")
+    print(f"同名重复 {len(groups)} 组，{len(drafts)} 款改为草稿")
+    if dry_run:
+        return
+    for i in range(0, len(keep_updates + drafts), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": (keep_updates + drafts)[i:i + 50]})
+    print(f"✓ 已合并（改为草稿的产品在后台 产品 → 草稿 里，可以随时恢复）")
+
+
+def cmd_mark_review(wp, dry_run=False):
+    """content/name-review.csv 里拿不准官方名称的产品：写入 aurora_review，前台和后台把名称标红，等人工核对。
+    核对完把那一行从表里删掉再运行一次，标记就会清除。"""
+    with open(os.path.join(CONTENT_DIR, "name-review.csv"), newline="", encoding="utf-8") as f:
+        rows = {r["sku"].upper(): r for r in csv.DictReader(f)}
+    products = wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,sku,name,meta_data"})
+    updates = []
+    for p in products:
+        sku = (p.get("sku") or "").upper()
+        cur = next((m["value"] for m in p.get("meta_data", []) if m["key"] == "aurora_review"), "")
+        want = rows[sku]["note"] if sku in rows else ""
+        if cur != want:
+            updates.append({"id": p["id"], "meta_data": [{"key": "aurora_review", "value": want}]})
+            print(f"  {'标红' if want else '取消标红'}：{p.get('sku')} {p['name']}" + (f"（{want}）" if want else ""))
+    missing = set(rows) - {(p.get("sku") or "").upper() for p in products}
+    for sku in sorted(missing):
+        print(f"! 网站上没有 {sku}")
+    print(f"待核对名称：{len(rows)} 款，这次变更 {len(updates)} 款")
+    if dry_run or not updates:
+        return
+    for i in range(0, len(updates), 50):
+        wp.req("POST", "wc/v3/products/batch", {"update": updates[i:i + 50]})
+    print("✓ 已标记（只在内部预览模式下或管理员登录时显示红色）")
+
+
 def cmd_photo_auto(wp, photo_dir, inventory_zip="~/Desktop/aurora-图片清单.zip"):
     """一次做完：按文件名自动对照，只上传唯一、确定的匹配；不确定和对不上的不上传，标为「待确认」列在对照表里。
     对照表存到桌面并附进清点包，之后可以逐张核对；上传沿用 photo-apply（先备份、按顺序进图库、原图不动）。"""
@@ -1262,7 +1349,8 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "photo-auto", "rename", "all"])
+                                       "photo-restore", "photo-auto", "rename", "merge", "mark-review",
+                                       "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -1327,6 +1415,10 @@ def main():
         cmd_photo_auto(wp, args.photos)
     if args.command == "rename":
         cmd_rename(wp, args.dry_run)
+    if args.command == "merge":
+        cmd_merge(wp, args.dry_run)
+    if args.command == "mark-review":
+        cmd_mark_review(wp, args.dry_run)
     if args.command in ("preview-link", "all") and not args.dry_run:
         cmd_preview_link(wp)
 

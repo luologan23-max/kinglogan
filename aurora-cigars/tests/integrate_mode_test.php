@@ -9,6 +9,11 @@ function do_shortcode( $s ) { return $s; }
 function shortcode_exists( $tag ) { return false; }
 function get_page_by_path( $path ) { return 'my-request' === $path ? (object) array( 'ID' => 241 ) : null; }
 function get_permalink( $p ) { return 'https://example.com/my-request/'; }
+function get_transient( $k ) { return 'aurora_review_ids' === $k ? ( $GLOBALS['review_ids'] ?? array() ) : false; }
+function set_transient( $k, $v, $t = 0 ) { return true; }
+function delete_transient( $k ) { return true; }
+function current_user_can( $cap ) { return ! empty( $GLOBALS['can_edit'] ); }
+function get_post_meta( $id, $key = '', $single = false ) { return 'aurora_review' === $key ? ( $GLOBALS['meta'][ $id ] ?? '' ) : ''; }
 // 模拟 Code Snippets 片段表：一条启用的站点 CSS、一条停用的
 class Fake_WPDB {
 	public $prefix = 'wp_';
@@ -90,5 +95,22 @@ check( 'YITH 询价页转到需求单页面', 'https://example.com/my-request/' 
 $GLOBALS['queried'] = (object) array( 'post_content' => $home );
 check( '其他页面不跳转', null === aurora_quote_redirect_target() );
 $GLOBALS['is_page'] = false;
+
+// 拿不准官方名称的产品：前台标红（只在预览模式或管理员登录时），后台列表标注
+$GLOBALS['review_ids'] = array( 60, 137 );
+$GLOBALS['options']['aurora_core'] = array( 'private_mode' => 1 );
+$head = capture( 'wp_head' );
+check( '预览模式下待核对产品名称标红', false !== strpos( $head, 'li.product.post-60 .aur-card-name' ) && false !== strpos( $head, 'body.postid-137 .aur-product-name-cn' ) && false !== strpos( $head, '名称待核对' ) );
+$GLOBALS['options']['aurora_core'] = array( 'private_mode' => 0 );
+$GLOBALS['can_edit'] = false;
+check( '正式对外后访客看不到标红', false === strpos( capture( 'wp_head' ), 'aurora-review-css' ) );
+$GLOBALS['can_edit'] = true;
+check( '正式对外后管理员仍能看到标红', false !== strpos( capture( 'wp_head' ), 'aurora-review-css' ) );
+$GLOBALS['options']['aurora_core'] = array( 'private_mode' => 1 );
+$GLOBALS['meta'] = array( 60 => 'x' );
+$states = apply_filters( 'display_post_states', array(), (object) array( 'ID' => 60, 'post_type' => 'product' ) );
+check( '后台产品列表标注「名称待核对」', isset( $states['aurora_review'] ) && false !== strpos( $states['aurora_review'], '名称待核对' ) );
+$states = apply_filters( 'display_post_states', array(), (object) array( 'ID' => 61, 'post_type' => 'product' ) );
+check( '其他产品不标注', ! isset( $states['aurora_review'] ) );
 
 exit( $fail ? 1 : 0 );

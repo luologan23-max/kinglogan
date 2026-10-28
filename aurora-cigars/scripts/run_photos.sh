@@ -2,7 +2,7 @@
 # 产品实拍图（在你自己的 Mac 上运行），分两步，第一步不改任何东西：
 #   bash run_photos.sh                 第 1 步：清点照片（只读）→ 桌面生成「aurora-图片清单.zip」发给 Claude 核对
 #   bash run_photos.sh apply           第 2 步：按 Claude 整理、你确认过的对照表（content/photo-mapping.csv）上传
-#   bash run_photos.sh auto            一次做完：清点备份 → 修正写错的名称 → 重复型号改草稿 → 按文件名自动配图上传（不确定的不传）
+#   bash run_photos.sh auto            一次做完：清点备份 → 修正写错的名称 → 合并同名重复 → 重复型号改草稿 → 拿不准的名称标红 → 按文件名自动配图上传（不确定的不传）
 #   bash run_photos.sh restore 备份.json  撤销：把产品图片和上架状态恢复成备份时的样子
 set -euo pipefail
 MODE="${1:-inventory}"
@@ -59,15 +59,17 @@ apply)
 	echo "✓ 完成。请把终端截图和桌面上的「aurora-audit-配图后.zip」发给 Claude 检查。"
 	;;
 auto)
-	# 一次做完：清点备份 → 更新插件 → 修正写错的名称 → 重复型号改草稿 → 按文件名自动配图上传（不确定的不传）→ 诊断包
+	# 一次做完：清点备份 → 更新插件 → 修正名称 → 合并同名重复 → 重复型号改草稿 → 名称标红 → 自动配图上传（不确定的不传）→ 诊断包
 	ask_folder
-	run "1/7 检查连接" check
-	run "2/7 清点照片并备份（只读）" photo-inventory --photos "$DIR"
-	run "3/7 更新插件" install-plugin
-	run "4/7 修正写错的产品名称" rename
-	run "5/7 重复型号改为草稿" dedupe
-	run "6/7 按文件名配图并上传" photo-auto --photos "$DIR"
-	run "7/7 导出诊断包" audit --out ~/Desktop/aurora-audit-配图后.zip
+	run "1/9 检查连接" check
+	run "2/9 清点照片并备份（只读）" photo-inventory --photos "$DIR"
+	run "3/9 更新插件" install-plugin
+	run "4/9 修正写错的产品名称" rename
+	run "5/9 合并同名重复的产品" merge
+	run "6/9 标准目录里的重复型号改为草稿" dedupe
+	run "7/9 拿不准的官方名称标红" mark-review
+	run "8/9 按文件名配图并上传" photo-auto --photos "$DIR"
+	run "9/9 导出诊断包" audit --out ~/Desktop/aurora-audit-配图后.zip
 	echo
 	echo "✓ 完成。请把桌面上的「aurora-图片清单.zip」「aurora-audit-配图后.zip」和终端截图发给 Claude。"
 	;;
