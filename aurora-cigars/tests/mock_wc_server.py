@@ -171,6 +171,21 @@ class H(BaseHTTPRequestHandler):
         return self.send(404, {"code": "rest_no_route", "path": p})
 
     def do_GET(self):
+        # 简易前台：首页链接一个同站样式表和一个外站样式表（外站的不应下载）
+        if not self.path.startswith("/wp-json/"):
+            path = urlparse(self.path).path
+            if path.endswith(".css"):
+                body, ctype = b"body{color:#123}", "text/css"
+            else:
+                body = (b'<html><head><link rel="stylesheet" href="/wp-content/themes/astra/style.css?ver=1">'
+                        b'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost">'
+                        b'</head><body class="mock">' + path.encode() + b"</body></html>")
+                ctype = "text/html"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.route("GET")
 
     def do_POST(self):

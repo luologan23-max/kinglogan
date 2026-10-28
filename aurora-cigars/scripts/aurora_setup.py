@@ -32,6 +32,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 # CSV 列名 → 内部字段。列名比较时忽略大小写、空格、下划线和连字符。
 FIELD_ALIASES = {
@@ -582,6 +583,117 @@ def cmd_images(wp, photo_dir=None, url_csv=None, clear_temp=False, dry_run=False
     print(f"✓ 实拍图 {counts['photo']} 款，临时图 {counts['temp'] - errors} 款，品牌图 {counts['brand']} 款")
 
 
+def cmd_audit(wp, out_path):
+    """只读诊断：收集主题、插件、代码片段、产品/分类统计和前台页面 HTML + 同站 CSS，
+    打包成 zip，方便在别处还原页面效果、排查设计冲突和重复产品。不修改站点任何内容。"""
+    report, files = {}, {}
+
+    def section(name, fn):
+        try:
+            report[name] = fn()
+            print(f"✓ {name}")
+        except (SystemExit, Exception) as e:  # 某一项失败不影响其他项
+            report[name] = {"error": str(e)[:500]}
+            print(f"! {name}：{str(e)[:120]}")
+
+    section("site", lambda: wp.req("GET", "wp/v2/settings",
+                                   params={"_fields": "title,description,url,show_on_front,page_on_front"})[0])
+    section("theme", lambda: [{k: t.get(k) for k in ("stylesheet", "template", "name", "version")}
+                              for t in wp.req("GET", "wp/v2/themes", params={"status": "active"})[0]])
+    section("plugins", lambda: [{k: p.get(k) for k in ("plugin", "name", "version", "status")}
+                                for p in wp.req("GET", "wp/v2/plugins")[0]])
+    section("snippets", lambda: [{k: sn.get(k) for k in ("id", "name", "desc", "scope", "active", "priority", "code")}
+                                 for sn in (wp.get_or_none("code-snippets/v1/snippets") or [])])
+    section("categories", lambda: wp.get_all("wp/v2/product_cat", {"_fields": "id,name,slug,parent,count,link"}))
+    section("pages", lambda: wp.get_all("wp/v2/pages", {"_fields": "id,slug,title,status,link,template,parent",
+                                                         "status": "publish,draft,private"}))
+
+    def products():
+        rows = wp.get_all("wc/v3/products", {"status": "any",
+                                             "_fields": "id,name,sku,status,stock_status,permalink,categories,images,meta_data"})
+        with open(os.path.join(CONTENT_DIR, "catalog.csv"), newline="", encoding="utf-8") as f:
+            ours = {r["SKU"] for r in csv.DictReader(f)}
+        names = {}
+        for p in rows:
+            names.setdefault(re.sub(r"\s+", "", p.get("name", "")).lower(), []).append(p["id"])
+        return {
+            "total": len(rows),
+            "from_catalog_csv": sum(1 for p in rows if p.get("sku") in ours),
+            "duplicate_names": {k: v for k, v in names.items() if len(v) > 1},
+            "items": [{
+                "id": p["id"], "name": p.get("name"), "sku": p.get("sku"), "status": p.get("status"),
+                "stock": p.get("stock_status"), "link": p.get("permalink"),
+                "cats": [c.get("name", c.get("id")) for c in p.get("categories", [])],
+                "images": len(p.get("images") or []),
+                "ours": p.get("sku") in ours,
+                "meta": {m["key"]: m["value"] for m in p.get("meta_data", [])
+                         if isinstance(m.get("value"), (str, int, float)) and not m["key"].startswith("_")},
+            } for p in rows],
+        }
+    section("products", products)
+
+    # 前台页面：用预览密钥以访客身份抓取，并下载同站 CSS
+    key = (wp.get_or_none("wp/v2/settings", {"_fields": "aurora_preview_key"}) or {}).get("aurora_preview_key", "")
+    host = urllib.parse.urlparse(wp.site).netloc
+    targets = [("home", wp.site + "/")]
+    shop = wp.get_or_none("wc/v3/settings/products/woocommerce_shop_page_id")
+    if shop and shop.get("value"):
+        page = wp.get_or_none(f"wp/v2/pages/{shop['value']}", {"_fields": "link"})
+        if page:
+            targets.append(("shop", page["link"]))
+    cats = report.get("categories")
+    if isinstance(cats, list) and cats:
+        top = max(cats, key=lambda c: c.get("count", 0))
+        targets.append(("category", top["link"]))
+    prods = report.get("products", {}).get("items", []) if isinstance(report.get("products"), dict) else []
+    for label, want_ours in (("product_existing", False), ("product_catalog", True)):
+        hit = next((p for p in prods if p["ours"] == want_ours and p["status"] == "publish" and p.get("link")), None)
+        if hit:
+            targets.append((label, hit["link"]))
+
+    css_seen = {}
+
+    def fetch(url):
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 aurora-audit"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+
+    report["pages_html"] = {}
+    for label, url in targets:
+        full = url + ("&" if "?" in url else "?") + "aurora_preview=" + key if key else url
+        try:
+            html = fetch(full).decode("utf-8", "replace")
+        except Exception as e:
+            report["pages_html"][label] = {"url": url, "error": str(e)[:200]}
+            print(f"! 页面 {label}：{e}")
+            continue
+        files[f"html/{label}.html"] = html.encode("utf-8")
+        report["pages_html"][label] = {"url": url, "file": f"html/{label}.html", "bytes": len(html)}
+        print(f"✓ 页面 {label}（{len(html) // 1024} KB）")
+        for href in re.findall(r"<link[^>]+rel=[\"']stylesheet[\"'][^>]*href=[\"']([^\"']+)", html) + \
+                re.findall(r"<link[^>]+href=[\"']([^\"']+)[\"'][^>]*rel=[\"']stylesheet", html):
+            href = href.replace("&#038;", "&").replace("&amp;", "&")
+            absu = urllib.parse.urljoin(url, href)
+            if urllib.parse.urlparse(absu).netloc != host or absu in css_seen:
+                continue
+            name = "css/" + re.sub(r"[^A-Za-z0-9._-]+", "_", urllib.parse.urlparse(absu).path.strip("/"))[-120:]
+            try:
+                files[name] = fetch(absu)
+                css_seen[absu] = name
+            except Exception as e:
+                css_seen[absu] = f"error: {e}"
+    report["css_map"] = css_seen
+    print(f"✓ 样式表 {sum(1 for v in css_seen.values() if v.startswith('css/'))} 个")
+
+    out_path = os.path.expanduser(out_path)
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("report.json", json.dumps(report, ensure_ascii=False, indent=2))
+        for name, data in files.items():
+            z.writestr(name, data)
+    print(f"\n✓ 诊断包已保存：{out_path}（{os.path.getsize(out_path) // 1024} KB）")
+    print("  把这个文件拖进和 Claude 的对话里。里面没有任何密码。")
+
+
 def cmd_preview_link(wp):
     data, _ = wp.req("GET", "wp/v2/settings", params={"_fields": "aurora_preview_key"})
     key = (data or {}).get("aurora_preview_key")
@@ -620,7 +732,7 @@ def cmd_cleanup(wp, dry_run=False):
 def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
-                                       "preview-link", "all"])
+                                       "preview-link", "audit", "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
                     help="手动指定字段映射，例如 --map price=USD售价")
@@ -629,6 +741,7 @@ def main():
     ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 命名")
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
+    ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")
     args = ap.parse_args()
 
     overrides = {}
@@ -664,6 +777,8 @@ def main():
         cmd_menu(wp, args.dry_run)
     if args.command == "cleanup":
         cmd_cleanup(wp, args.dry_run)
+    if args.command == "audit":
+        cmd_audit(wp, args.out)
     if args.command in ("preview-link", "all") and not args.dry_run:
         cmd_preview_link(wp)
 
