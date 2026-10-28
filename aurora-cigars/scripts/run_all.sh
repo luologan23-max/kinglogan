@@ -10,11 +10,13 @@ if ! python3 -c 'print()' >/dev/null 2>&1; then
 	exit 1
 fi
 export AURORA_USER="${AURORA_USER:-luologan23@gmail.com}"
-if [ -z "${AURORA_APP_PASSWORD:-}" ]; then
-	read -r -s -p "请粘贴 Application Password（输入时不显示）：" AURORA_APP_PASSWORD
+# 没收到密码（例如直接按了回车）就重新问，不往下跑
+while [ -z "${AURORA_APP_PASSWORD:-}" ]; do
+	read -r -s -p "请粘贴 Application Password（⌘V），然后按回车（输入时不显示）：" AURORA_APP_PASSWORD
 	echo
-	export AURORA_APP_PASSWORD
-fi
+	[ -z "$AURORA_APP_PASSWORD" ] && echo "✗ 没有收到密码，请重新粘贴后按回车。"
+done
+export AURORA_APP_PASSWORD
 
 run() { echo; echo "━━ $1"; shift; python3 aurora_setup.py "$@"; }
 run "1/8 检查连接"            check
