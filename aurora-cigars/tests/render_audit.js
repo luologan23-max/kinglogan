@@ -53,6 +53,53 @@ async function serve(route) {
 	return route.abort();
 }
 
+// 在页面里运行：横向溢出、过小的字（中文 < 12px、其他 < 10px）、手机上过小的点按区（< 40px）、
+// 文字与背景对比度不足（WCAG：小字 < 4.5，18px 以上或 14px 粗体以上 < 3）。每类给出数量和前 12 个例子。
+function measure(mobile) {
+	const visible = (el) => {
+		const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+		return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05;
+	};
+	const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') +
+		[...el.classList].slice(0, 2).map((c) => '.' + c).join('');
+	const text = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+	const rgb = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+	const lum = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+		.reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+	const bgOf = (el) => {
+		for (let e = el; e; e = e.parentElement) {
+			const c = rgb(getComputedStyle(e).backgroundColor);
+			if (c.length >= 3 && (c.length < 4 || c[3] > 0.5)) return c;
+			if (getComputedStyle(e).backgroundImage !== 'none') return null; // 背景是图片，算不准，跳过
+		}
+		return [255, 255, 255];
+	};
+	const list = () => ({ count: 0, examples: [] });
+	const add = (bucket, item) => { bucket.count++; if (bucket.examples.length < 12) bucket.examples.push(item); };
+	const out = { overflow: document.documentElement.scrollWidth - window.innerWidth,
+		smallText: list(), smallTargets: list(), lowContrast: list() };
+	for (const el of document.body.querySelectorAll('*')) {
+		if (!visible(el)) continue;
+		const t = text(el);
+		if (t) {
+			const s = getComputedStyle(el), size = parseFloat(s.fontSize), cjk = /[㐀-鿿]/.test(t);
+			if (size < (cjk ? 12 : 10)) add(out.smallText, { el: name(el), size, text: t.slice(0, 30) });
+			const bg = bgOf(el), fg = rgb(s.color);
+			if (bg && fg.length >= 3) {
+				const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x), ratio = (a + 0.05) / (b + 0.05);
+				const large = size >= 18 || (size >= 14 && parseInt(s.fontWeight, 10) >= 700);
+				if (ratio < (large ? 3 : 4.5)) add(out.lowContrast, { el: name(el), ratio: +ratio.toFixed(2), size, color: s.color, text: t.slice(0, 30) });
+			}
+		}
+		if (mobile && el.matches('a[href], button, [role="button"], input:not([type="hidden"]), select, summary')
+			&& !el.matches('.screen-reader-text, .skip-link')) {  // 读屏专用的隐藏链接不算
+			const r = el.getBoundingClientRect();
+			if (r.width < 40 || r.height < 40) add(out.smallTargets, { el: name(el), w: Math.round(r.width), h: Math.round(r.height), text: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 20) });
+		}
+	}
+	return out;
+}
+
 (async () => {
 	fs.mkdirSync(outDir, { recursive: true });
 	const browser = await chromium.launch({ proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined });
@@ -83,6 +130,12 @@ async function serve(route) {
 				document.head.appendChild(st);
 			});
 			await page.waitForTimeout(800);
+			// AURORA_PROBE=1：截图前量一遍可量化的设计问题，存成同名 .json（设计审查用）
+			if (process.env.AURORA_PROBE) {
+				const probe = await page.evaluate(measure, mobile);
+				fs.writeFileSync(path.join(outDir, `${label}-${tag}.json`), JSON.stringify(probe, null, 1));
+				console.log(`  ${label}-${tag}: 横向溢出 ${probe.overflow}px，字太小 ${probe.smallText.count}，点按区太小 ${probe.smallTargets.count}，对比度不足 ${probe.lowContrast.count}`);
+			}
 			const out = path.join(outDir, `${label}-${tag}.png`);
 			await page.screenshot({ path: out, fullPage: true });
 			console.log('✓', out);

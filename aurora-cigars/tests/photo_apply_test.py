@@ -189,7 +189,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 with open(mapping, "w", newline="", encoding="utf-8-sig") as f:
                     w = csv.writer(f)
                     w.writerow(["file", "sha1", "sku", "product", "role", "order", "status", "note"])
-                    w.writerow(["高希霸 世纪—.PNG", sha1, "CUB-023", "", "主图", 1, "确认", ""])
+                    w.writerow(["高希霸 世纪—.PNG", sha1, "CUB-093", "", "主图", 1, "确认", ""])  # CUB-093 还没配图，才会去找照片
                 buf = io.StringIO()
                 old_out, sys.stdout = sys.stdout, buf
                 try:
@@ -249,6 +249,37 @@ with tempfile.TemporaryDirectory() as tmp:
                   (gone, buf.getvalue()))
             used = {i["id"] for p in state()["products"] for i in p.get("images") or []} - {9}  # 9 是开头预置的假图片编号
             check("产品正在用的图都还在", used <= left, used - left)
+
+            # 第二批照片：每批一份对照表，这次只拖新的文件夹。已配好的跳过、别的批次没拖进来的跳过并列出、新的照常上传
+            wp.req("POST", "wc/v3/products/batch", {"create": [
+                {"sku": "CUB-200", "name": "Second Batch Cigar", "status": "publish", "meta_data": [brand]},
+                {"sku": "CUB-201", "name": "First Batch Not Yet", "status": "publish", "meta_data": [brand]}]})
+            save_img(os.path.join(hub, "1211", "还没传的.PNG"), (900, 120))
+            hub2 = os.path.join(tmp, "hub2")
+            save_img(os.path.join(hub2, "热门新照片.PNG"), (900, 125), "sienna")
+            batch_a, batch_b = os.path.join(tmp, "photo-mapping.csv"), os.path.join(tmp, "photo-mapping-热门2.csv")
+            header = ["file", "sha1", "sku", "product", "role", "order", "status", "note"]
+            with open(batch_a, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                w.writerow(["帕特加斯 路西塔尼亚.PNG", "", "CUB-068", "", "主图", 1, "确认", ""])
+                w.writerow(["帕特加斯 路西塔尼亚2.JPG", "", "CUB-068", "", "包装", 1, "确认", ""])
+                w.writerow(["还没传的.PNG", "", "CUB-201", "", "主图", 1, "确认", ""])
+            with open(batch_b, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f)
+                w.writerow(header)
+                w.writerow(["热门新照片.PNG", A.file_sha1(os.path.join(hub2, "热门新照片.PNG")), "CUB-200", "", "主图", 1, "确认", ""])
+            buf = io.StringIO()
+            old_out, sys.stdout = sys.stdout, buf
+            try:
+                A.cmd_photo_apply(wp, hub2, [batch_a, batch_b])
+            finally:
+                sys.stdout = old_out
+            by_sku = {p["sku"]: p for p in state()["products"]}
+            log5 = buf.getvalue()
+            check("第二批：新照片照常上传", bool(by_sku["CUB-200"].get("images")), log5)
+            check("第二批：已配好的上一批产品跳过", "1 款之前已配好" in log5, log5)
+            check("第二批：没拖进来的上一批照片跳过并列出", not by_sku["CUB-201"].get("images") and "CUB-201" in log5, log5)
         finally:
             if home:
                 os.environ["HOME"] = home

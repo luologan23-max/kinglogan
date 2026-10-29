@@ -35,6 +35,10 @@ ask_folder() {
 
 run() { echo; echo "━━ $1"; shift; python3 aurora_setup.py "$@"; }
 
+# 每批照片一份对照表：content/photo-mapping.csv、content/photo-mapping-<批次>.csv……全部交给 photo-apply
+MAPS=()
+for f in ../content/photo-mapping*.csv; do [ -f "$f" ] && MAPS+=(--mapping "$f"); done
+
 case "$MODE" in
 inventory)
 	ask_folder
@@ -44,11 +48,10 @@ inventory)
 	echo "✓ 完成。请把桌面上的「aurora-图片清单.zip」发给 Claude。"
 	;;
 apply)
-	MAP="../content/photo-mapping.csv"
-	[ -f "$MAP" ] || { echo "✗ 还没有核对好的对照表（content/photo-mapping.csv），请先完成第 1 步并等 Claude 整理。"; exit 1; }
+	[ ${#MAPS[@]} -gt 0 ] || { echo "✗ 还没有核对好的对照表（content/photo-mapping*.csv），请先完成第 1 步并等 Claude 整理。"; exit 1; }
 	ask_folder
 	run "1/4 检查连接" check
-	run "2/4 上传计划（只显示，不上传）" photo-apply --photos "$DIR" --mapping "$MAP" --dry-run
+	run "2/4 上传计划（只显示，不上传）" photo-apply --photos "$DIR" ${MAPS[@]+"${MAPS[@]}"} --dry-run
 	echo
 	read -r -p "按上面的计划上传吗？确认请输入 y 然后按回车（其他键取消）：" OK
 	if [ "$OK" != "y" ] && [ "$OK" != "Y" ]; then
@@ -57,7 +60,7 @@ apply)
 	fi
 	run "3/4 新建站上没有的产品（草稿）、标红并上传关联图片" create-drafts
 	python3 aurora_setup.py mark-review
-	python3 aurora_setup.py photo-apply --photos "$DIR" --mapping "$MAP"
+	python3 aurora_setup.py photo-apply --photos "$DIR" ${MAPS[@]+"${MAPS[@]}"}
 	run "4/4 导出诊断包" audit --out ~/Desktop/aurora-audit-配图后.zip
 	echo
 	echo "✓ 完成。请把终端截图和桌面上的「aurora-audit-配图后.zip」发给 Claude 检查。"
@@ -74,7 +77,7 @@ auto)
 	run "6/10 标准目录里的重复型号改为草稿" dedupe
 	run "7/10 站上没有的限量/特别版新建为草稿" create-drafts
 	run "8/10 拿不准的名称标红" mark-review
-	run "9/10 按核对过的对照表配图并上传（待确认的不传）" photo-apply --photos "$DIR" --mapping ../content/photo-mapping.csv
+	run "9/10 按核对过的对照表配图并上传（待确认的不传）" photo-apply --photos "$DIR" ${MAPS[@]+"${MAPS[@]}"}
 	run "10/10 导出诊断包" audit --out ~/Desktop/aurora-audit-配图后.zip
 	echo
 	echo "✓ 完成。请把桌面上的「aurora-图片清单.zip」「aurora-audit-配图后.zip」和终端截图发给 Claude。"

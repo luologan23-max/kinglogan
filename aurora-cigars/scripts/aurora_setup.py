@@ -963,14 +963,20 @@ def cmd_photo_inventory(wp, photo_dir, out_path):
     print("  原始照片没有任何改动，网站也没有任何改动。")
 
 
-def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
-    """第 2 步：按核对确认后的对照表给产品配图，只处理状态为「确认」的行。
+def cmd_photo_apply(wp, photo_dir, mapping_csvs, dry_run=False):
+    """第 2 步：按核对确认后的对照表给产品配图，只处理状态为「确认」的行。可以给多份对照表（每批照片一份）。
     同一产品的图按 主图 → 包装 → 本体 → 细节 → 其他 排列：第一张是产品主图，其余进产品图库。
-    先在桌面备份这些产品现有的图片；上传的是转换/缩小后的副本，原始照片不改动。"""
+    已经按同样照片配好的产品直接跳过（不需要这次拖进它的照片）；照片不在这次拖进来的文件夹里的产品也跳过并列出来；
+    照片内容和核对时对不上（指纹不同）则整批不上传。先在桌面备份这些产品现有的图片；上传的是处理后的副本，原图不动。"""
     if not photo_dir or not os.path.isdir(photo_dir):
         raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
-    with open(mapping_csv, newline="", encoding="utf-8-sig") as f:
-        rows = [r for r in csv.DictReader(f)]
+    if not mapping_csvs:
+        print("· 还没有对照表（content/photo-mapping*.csv），这次不上传照片")
+        return
+    rows = []
+    for path in [mapping_csvs] if isinstance(mapping_csvs, str) else mapping_csvs:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            rows += list(csv.DictReader(f))
     todo = [r for r in rows if r.get("status", "").strip() == "确认"]
     held = len(rows) - len(todo)
     products = wp.get_all("wc/v3/products", {"_fields": "id,sku,name,status,images,meta_data", "status": "any"})
@@ -980,34 +986,47 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
         index.setdefault(unicodedata.normalize("NFC", os.path.basename(rel)), []).append(rel)
     with open(os.path.join(CONTENT_DIR, "new-products.csv"), newline="", encoding="utf-8") as f:
         to_create = {r["sku"].upper() for r in csv.DictReader(f)}
-    plan, problems, later = {}, [], set()
+    meta = lambda p, k: next((m["value"] for m in p.get("meta_data", []) if m["key"] == k), "")
+    files_of = lambda items: "|".join(os.path.basename(r["file"]) for _, _, r in items)
+    order = lambda r: (PHOTO_ROLES.get(r.get("role", "").strip(), 4), int(r.get("order") or 1))
+    groups = {}
     for r in todo:
-        p = by_sku.get(r["sku"].strip().upper())
-        full, why = find_photo(photo_dir, r["file"], index, (r.get("sha1") or "").strip())
-        if not p and dry_run and r["sku"].strip().upper() in to_create:
-            later.add(r["sku"].strip().upper())  # 预览时还没新建，正式运行前 create-drafts 会先建好
-        elif not p:
-            problems.append(f"网站上没有 SKU {r['sku']}（{r['file']}）")
-        elif not full:
-            problems.append(f"{why}：{r['file']}")
+        groups.setdefault(r["sku"].strip().upper(), []).append(r)
+    plan, problems, later, done_before, missing = {}, [], set(), [], []
+    for sku, rs in groups.items():
+        rs.sort(key=order)
+        p = by_sku.get(sku)
+        if not p:
+            if dry_run and sku in to_create:
+                later.add(sku)  # 预览时还没新建，正式运行前 create-drafts 会先建好
+            else:
+                problems.append(f"网站上没有 SKU {sku}（{rs[0]['file']}）")
+            continue
+        if (image_source(p) == "photo" and meta(p, "aurora_photo_files") == "|".join(os.path.basename(r["file"]) for r in rs)
+                and meta(p, "aurora_photo_prep") == PHOTO_PREP):
+            done_before.append(sku)  # 重新运行时，已经按同样照片配好的产品不再重复上传
+            continue
+        found = [(r,) + find_photo(photo_dir, r["file"], index, (r.get("sha1") or "").strip()) for r in rs]
+        bad = [f"{why}：{r['file']}" for r, full, why in found if not full and why != "找不到照片"]
+        absent = [r["file"] for r, full, why in found if not full and why == "找不到照片"]
+        if bad:
+            problems += bad
+        elif absent:
+            missing.append((p, absent))
         else:
-            key = (PHOTO_ROLES.get(r.get("role", "").strip(), 4), int(r.get("order") or 1))
-            plan.setdefault(p["id"], (p, []))[1].append((key, full, r))
+            plan[p["id"]] = (p, [(order(r), full, r) for r, full, _ in found])
     print(f"对照表 {len(rows)} 行：确认 {len(todo)} 行，待确认/不上传 {held} 行（这次不处理）")
     for msg in problems:
         print(f"! {msg}")
     if problems:
         print(f"（照片文件夹里共找到 {sum(len(v) for v in index.values())} 张图片）")
         raise SystemExit("✗ 对照表和网站或照片文件夹对不上，先不上传。请把这几行发给 Claude。")
-    meta = lambda p, k: next((m["value"] for m in p.get("meta_data", []) if m["key"] == k), "")
-    files_of = lambda items: "|".join(os.path.basename(r["file"]) for _, _, r in items)
-    for p, items in plan.values():
-        items.sort(key=lambda x: x[0])
-    done_before = [pid for pid, (p, items) in plan.items()
-                   if image_source(p) == "photo" and meta(p, "aurora_photo_files") == files_of(items)
-                   and meta(p, "aurora_photo_prep") == PHOTO_PREP]
-    for pid in done_before:  # 重新运行时，已经按同样照片配好的产品不再重复上传
-        del plan[pid]
+    if missing:
+        print(f"· 这次拖进来的文件夹里没有下面 {len(missing)} 款产品的照片，先跳过（多半属于另一批照片；要传就把那个文件夹拖进来再运行）：")
+        for p, files in missing[:10]:
+            print(f"    {p['sku']:<14} {'、'.join(files)}")
+        if len(missing) > 10:
+            print(f"    ……另有 {len(missing) - 10} 款")
     print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图"
           + (f"（另有 {len(done_before)} 款之前已配好，跳过）" if done_before else "")
           + (f"；另有 {len(later)} 款新建草稿后再配图" if later else ""))
@@ -1540,7 +1559,7 @@ def main():
     ap.add_argument("--limit", type=int, help="只导入前 N 行（测试用）")
     ap.add_argument("--photos", metavar="目录", help="images 命令：实拍图目录，文件按 SKU 或产品名命名")
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
-    ap.add_argument("--mapping", metavar="CSV", help="photo-apply：核对确认后的照片对照表")
+    ap.add_argument("--mapping", metavar="CSV", action="append", help="photo-apply：核对确认后的照片对照表（每批一份，可以写多次）")
     ap.add_argument("--backup", metavar="JSON", help="photo-restore：产品图片备份文件")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")
