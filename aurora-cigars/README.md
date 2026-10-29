@@ -21,7 +21,7 @@
 | `scripts/run_all.sh` | Mac 一键上线（见下文） |
 | `scripts/run_fix.sh` | Mac 一键设计修复：更新插件、清理、恢复原有页面、重复型号改草稿、导出诊断包 |
 | `scripts/build_zip.sh` | 修改插件后重新打包 |
-| `scripts/run_site.sh` | Mac 一条命令：`audit` 只读导出诊断包；`update` 更新插件后导出诊断包 |
+| `scripts/run_site.sh` | Mac 一条命令：`audit` 只读导出诊断包；`update` 更新插件后导出诊断包；`whatsapp 号码` 全站更换 WhatsApp 号码（先备份） |
 | `scripts/run_photos.sh` | Mac 一条命令：照片清点、按对照表上传、清理旧图、撤销（见下文「产品实拍图」） |
 | `tests/fetch_vendor.sh` | 下载离线还原页面要用的 jQuery 等前端库 |
 | `tests/` | 测试（模拟环境渲染、浏览器交互、模拟 WooCommerce API、用诊断包离线还原线上页面） |

@@ -29,7 +29,7 @@
 - 相关产品区块图片和名字正常。
 
 ## 5. 询价转化
-- WhatsApp 链接号码正确（+971 585598868），预填文字带产品中英文名、数量、页面链接；清单整单发送格式清楚。（HTML 里 `wa.me` 链接的 text 参数）
+- WhatsApp 链接号码和插件设置里的一致、全站只有一个号码（换号用 `run_site.sh whatsapp`），预填文字带产品中英文名、数量、页面链接；清单整单发送格式清楚。（HTML 里 `wa.me` 链接的 text 参数）
 - 「我的需求单」页面：加入、改数量、删除、发送都能用；清单为空时有引导。（`page_my-request`、`tests/integrate_bridge_test.js`）
 - 旧的「询价」页（request-quote）跳到需求单，不是 503 或空白。（report.pages_html 里的 redirects）
 - 浮动按钮不遮挡底部操作条或页脚内容。（手机截图底部）

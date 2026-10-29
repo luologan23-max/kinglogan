@@ -1208,6 +1208,116 @@ def cmd_merge(wp, dry_run=False):
     print(f"✓ 已合并（改为草稿的产品在后台 产品 → 草稿 里，可以随时恢复）")
 
 
+WA_OLD = "971585598868"  # 2026-10 之前一直在用的 WhatsApp 号码
+
+
+def wa_digits(text):
+    """整理成「国家码 + 号码」的纯数字：+971、00971、0971 开头和 05 开头的本地写法都可以。"""
+    d = re.sub(r"\D", "", str(text or ""))
+    d = re.sub(r"^00", "", d)
+    if d.startswith("0971"):
+        d = d[1:]
+    if d.startswith("05") and len(d) == 10:
+        d = "971" + d[1:]
+    return d
+
+
+def wa_pattern(old):
+    """匹配旧号码的各种写法：971585598868、+971 58 559 8868、+971 585 598 868、0585598868……前后不能紧挨别的数字。"""
+    sep = r"[\s\-\u00a0]?"
+    return re.compile(r"(?<!\d)(?:(\+971|00971|971|0)" + sep + r")?" + sep.join(re.escape(c) for c in old[3:]) + r"(?!\d)")
+
+
+def wa_replace(text, pattern, new):
+    """把旧号码换成新号码，保持原来的写法：链接里的纯数字还是纯数字，给人看的带空格写法换成 +971 5X XXX XXXX。"""
+    local = new[3:]
+
+    def sub(m):
+        prefix = m.group(1) or ""
+        if not re.search(r"[\s\-\u00a0]", m.group(0)):
+            return prefix + local
+        pretty = f"{local[:2]} {local[2:5]} {local[5:]}"
+        return pretty if not prefix else "0" + pretty if prefix == "0" else "+971 " + pretty
+
+    return pattern.subn(sub, text or "")
+
+
+def cmd_whatsapp(wp, number, dry_run=False):
+    """更换网站上的 WhatsApp 号码：插件设置、启用中的代码片段（导航、页脚、产品页、询价清单里写死的号码）、
+    页面正文、产品描述，一次全部换掉。换之前把这些内容备份到桌面，可以对照恢复。"""
+    new = wa_digits(number)
+    if not (new.startswith("971") and len(new) == 12 and new[3] == "5"):
+        raise SystemExit(f"✗ {number} 不像阿联酋手机号：应该是 971 + 5 开头的 9 位数字（现在 971 后面是 {max(len(new) - 3, 0)} 位）。"
+                         "请核对完整号码后再运行。")
+    current = (wp.get_or_none("aurora/v1/whatsapp") or {}).get("whatsapp")
+    if current is None:
+        raise SystemExit("✗ 网站上的 aurora-core 插件还是旧版，没有换号接口。先运行 install-plugin 更新插件。")
+    olds = sorted({WA_OLD, wa_digits(current)} - {new})
+    patterns = [wa_pattern(o) for o in olds if len(o) == 12]
+    print(f"新号码：+{new}（WhatsApp 链接 wa.me/{new}）；要替换的旧号码：{'、'.join('+' + o for o in olds) or '无'}")
+
+    def swap(text):
+        total = 0
+        for pat in patterns:
+            text, n = wa_replace(text, pat, new)
+            total += n
+        return text, total
+
+    plan, backup = [], {"whatsapp_setting": current, "snippets": [], "pages": [], "products": []}
+    for sn in wp.get_or_none("code-snippets/v1/snippets") or []:
+        code, n = swap(sn.get("code") or "")
+        if n and sn.get("active"):
+            plan.append(("snippet", sn["id"], f"代码片段 #{sn['id']} {sn.get('name', '')}", n, code))
+            backup["snippets"].append({"id": sn["id"], "name": sn.get("name"), "code": sn.get("code")})
+        elif n:
+            print(f"· 停用的片段 #{sn['id']} {sn.get('name', '')} 里也有旧号码 {n} 处（停用中，不影响网站，不改）")
+    for pg in wp.get_all("wp/v2/pages", {"context": "edit", "status": "publish,future,draft,pending,private",
+                                          "_fields": "id,slug,title,content"}):
+        raw = (pg.get("content") or {}).get("raw", "") if isinstance(pg.get("content"), dict) else pg.get("content") or ""
+        text, n = swap(raw)
+        if n:
+            plan.append(("page", pg["id"], f"页面 {pg.get('slug')}", n, text))
+            backup["pages"].append({"id": pg["id"], "slug": pg.get("slug"), "content": raw})
+    for pr in wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,sku,name,description,short_description"}):
+        fields = {}
+        for k in ("description", "short_description"):
+            text, n = swap(pr.get(k) or "")
+            if n:
+                fields[k] = text
+        if fields:
+            plan.append(("product", pr["id"], f"产品 {pr.get('sku')} {pr['name']}", len(fields), fields))
+            backup["products"].append({"id": pr["id"], **{k: pr.get(k) for k in fields}})
+    setting_changes = current != new
+    print(f"插件设置里的号码：+{current}" + ("（要改）" if setting_changes else "（已经是新号码）"))
+    for kind, _, label, n, _ in plan:
+        print(f"  {label}：{n} 处")
+    if not plan and not setting_changes:
+        print("✓ 网站上已经全部是新号码")
+        return
+    if dry_run:
+        return
+    stamp = __import__("datetime").datetime.now().strftime("%Y%m%d-%H%M")
+    path = os.path.expanduser(f"~/Desktop/aurora-换号备份-{stamp}.json")
+    path = path if os.path.isdir(os.path.dirname(path)) else os.path.abspath(os.path.basename(path))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(backup, f, ensure_ascii=False, indent=1)
+    print(f"✓ 换号前的内容已备份：{path}")
+    if setting_changes:
+        wp.req("POST", "aurora/v1/whatsapp", {"whatsapp": new})
+    products = []
+    for kind, oid, label, _, content in plan:
+        if kind == "snippet":
+            wp.req("POST", f"code-snippets/v1/snippets/{oid}", {"code": content})
+        elif kind == "page":
+            wp.req("POST", f"wp/v2/pages/{oid}", {"content": content})
+        else:
+            products.append(dict(content, id=oid))
+    if products:
+        save_products(wp, products, "更新描述")
+    print(f"✓ WhatsApp 号码已换成 +{new}：插件设置、{sum(1 for p in plan if p[0] == 'snippet')} 个代码片段、"
+          f"{sum(1 for p in plan if p[0] == 'page')} 个页面、{len(products)} 款产品描述")
+
+
 def cmd_create_drafts(wp, dry_run=False):
     """content/new-products.csv 里站上原来没有的产品（照片里的地区限量、特别版等）新建为草稿：
     只有名称和分类，价格、规格、库存留空，不对外显示；照片由 photo-apply 配上，标红由 mark-review 加上。
@@ -1550,7 +1660,7 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "photo-cleanup", "rename", "merge", "create-drafts", "mark-review",
+                                       "photo-restore", "photo-cleanup", "whatsapp", "rename", "merge", "create-drafts", "mark-review",
                                        "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
@@ -1561,6 +1671,7 @@ def main():
     ap.add_argument("--urls", metavar="CSV", help="images 命令：临时图清单（sku,url 两列）")
     ap.add_argument("--mapping", metavar="CSV", action="append", help="photo-apply：核对确认后的照片对照表（每批一份，可以写多次）")
     ap.add_argument("--backup", metavar="JSON", help="photo-restore：产品图片备份文件")
+    ap.add_argument("--number", metavar="号码", help="whatsapp：新的 WhatsApp 号码，例如 +971 58 559 8868")
     ap.add_argument("--clear-temp", action="store_true", help="images 命令：把临时图全部换回品牌图")
     ap.add_argument("--out", default="~/Desktop/aurora-audit.zip", help="audit 命令：诊断包保存位置")
     ap.add_argument("--replace-pages", action="store_true", help="pages 命令：同名的站点原有页面改名为 -old 后替换（默认保留不动）")
@@ -1612,6 +1723,10 @@ def main():
         cmd_photo_apply(wp, args.photos, args.mapping, args.dry_run)
     if args.command == "photo-restore":
         cmd_photo_restore(wp, args.backup)
+    if args.command == "whatsapp":
+        if not args.number:
+            raise SystemExit("✗ 用法：aurora_setup.py whatsapp --number '+971 5X XXX XXXX'")
+        cmd_whatsapp(wp, args.number, args.dry_run)
     if args.command == "photo-cleanup":
         cmd_photo_cleanup(wp, args.dry_run)
     if args.command == "rename":

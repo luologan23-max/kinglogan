@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Aurora Core
  * Description: Aurora Cigars 专用功能：目录模式（关闭购物车/结账）、WhatsApp 询价、多款询价清单、21 岁年龄验证、品牌设计样式与短代码。
- * Version: 1.2.3
+ * Version: 1.2.4
  * Author: Aurora Global Tobacco Trading FZCO
  * Requires Plugins: woocommerce
  * Text Domain: aurora-core
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AURORA_CORE_VERSION', '1.2.3' );
+define( 'AURORA_CORE_VERSION', '1.2.4' );
 define( 'AURORA_CORE_URL', plugin_dir_url( __FILE__ ) );
 
 /* -------------------------------------------------------------------------
@@ -114,6 +114,38 @@ add_action( 'rest_api_init', function () {
 	register_setting( 'general', 'aurora_preview_key', array(
 		'type'         => 'string',
 		'show_in_rest' => true,
+	) );
+} );
+
+// 插件设置里的 WhatsApp 号码对店铺管理员开放到 REST（/wp-json/aurora/v1/whatsapp），换号脚本用它读写
+add_action( 'rest_api_init', function () {
+	$can = function () {
+		return current_user_can( 'manage_woocommerce' );
+	};
+	register_rest_route( 'aurora/v1', '/whatsapp', array(
+		array(
+			'methods'             => 'GET',
+			'permission_callback' => $can,
+			'callback'            => function () {
+				return array( 'whatsapp' => aurora_opt( 'whatsapp' ) );
+			},
+		),
+		array(
+			'methods'             => 'POST',
+			'permission_callback' => $can,
+			'args'                => array( 'whatsapp' => array( 'required' => true, 'type' => 'string' ) ),
+			'callback'            => function ( $request ) {
+				$number = preg_replace( '/\D/', '', (string) $request['whatsapp'] );
+				if ( strlen( $number ) < 8 || strlen( $number ) > 15 ) {
+					return new WP_Error( 'aurora_bad_number', 'WhatsApp 号码应为 8–15 位数字（国家码 + 号码）', array( 'status' => 400 ) );
+				}
+				$saved             = get_option( 'aurora_core', array() );
+				$saved             = is_array( $saved ) ? $saved : array();
+				$saved['whatsapp'] = $number;
+				update_option( 'aurora_core', $saved );
+				return array( 'whatsapp' => aurora_opt( 'whatsapp' ) );
+			},
+		),
 	) );
 } );
 

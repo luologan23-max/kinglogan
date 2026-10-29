@@ -25,6 +25,7 @@ description: 动手修改 Aurora Cigars 网站（WordPress + WooCommerce + Astra
 | 产品页、商品卡的 HTML 结构 | 用户的片段 #14（产品页）/ #11（卡片样式）/ #15（导航页脚）| 结构只能在片段里改；先把改法讲清楚、征得同意，改前导出原代码备份 |
 | 产品名称、图片、上下架 | 产品数据，用 `scripts/aurora_setup.py` 的 rename / photo-* / create-drafts 等命令 | 见 `aurora-product-photos` |
 | 新功能（全站开关、短代码、跳转） | 插件 `aurora-core.php` | |
+| 换 WhatsApp 号码 | `run_site.sh whatsapp '+971 5X XXX XXXX'` | 号码写死在片段 #13/#14/#15、页面正文和插件设置里，这条命令一次全换（先备份）；号码先和用户逐位核对 |
 
 不要做：在 Elementor 或主题定制器里改（这些页面不用它们，改了会出现两套样式）；加购物车 / 结账；删除用户的片段或页面
 （停用、改草稿可以，删除要用户明确同意）。

@@ -70,6 +70,10 @@ class H(BaseHTTPRequestHandler):
                     m.update(body)
                     return self.send(200, m)
 
+        if p == "aurora/v1/whatsapp":  # 插件 1.2.4 的换号接口
+            if method == "POST":
+                state["settings"]["aurora_whatsapp"] = re.sub(r"\D", "", body["whatsapp"])
+            return self.send(200, {"whatsapp": state["settings"].get("aurora_whatsapp", "971585598868")})
         if p == "wp/v2/users/me":
             return self.send(200, {"name": "Tester", "username": "tester", "roles": ["administrator"]})
         if p == "wc/v3/system_status":
