@@ -154,6 +154,32 @@ with tempfile.TemporaryDirectory() as tmp:
             by_sku = {p["sku"]: p for p in state()["products"]}
             check("一款失败不影响其他款", bool(by_sku["COH-MSG-25"].get("images")), log3)
             check("报出失败的产品", "CUB-093" in log3 and "没有上传成功" in log3, log3)
+
+            # 站上没有的限量款新建为草稿（content/new-products.csv）
+            with open(os.path.join(A.CONTENT_DIR, "new-products.csv"), newline="", encoding="utf-8") as f:
+                new_rows = list(csv.DictReader(f))
+            for slug in ("collection", "punch-collection", "limited-editions"):
+                wp.req("POST", "wc/v3/products/categories", {"slug": slug, "name": slug})
+            cat_id = {c["slug"]: c["id"] for c in state()["cats"]}
+            wp.req("POST", "wc/v3/products/batch", {"create": [  # 已有同名产品的不能再建
+                {"sku": "OLD-1", "name": new_rows[0]["name"], "status": "publish"}]})
+            buf = io.StringIO()
+            old_out, sys.stdout = sys.stdout, buf
+            try:
+                A.cmd_create_drafts(wp)
+                A.cmd_create_drafts(wp)
+            finally:
+                sys.stdout = old_out
+            created = [p for p in state()["products"] if p.get("sku", "").startswith("LTD-")]
+            check("新建的都是草稿", created and all(p["status"] == "draft" for p in created), created[:1])
+            check("已有同名产品的不新建", new_rows[0]["sku"] not in {p["sku"] for p in created}
+                  and "已有同名" in buf.getvalue(), buf.getvalue()[:300])
+            check("其余各建一次（重跑不重复）", len(created) == len(new_rows) - 1, len(created))
+            punch = next(p for p in created if "潘趣" in p["name"])
+            check("分类：Collection + 品牌 + Limited Editions",
+                  [c["id"] for c in punch["categories"]] == [cat_id["collection"], cat_id["punch-collection"],
+                                                             cat_id["limited-editions"]], punch["categories"])
+            check("没有价格", not punch.get("regular_price"), punch.get("regular_price"))
         finally:
             if home:
                 os.environ["HOME"] = home

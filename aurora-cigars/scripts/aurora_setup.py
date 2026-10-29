@@ -602,7 +602,7 @@ def match_photos(photo_dir, products):
 
 
 STRIP_RATIO = 2  # 长宽比超过 2 的横条图（单支雪茄的侧面照）
-PAD = 1.08  # 横条图放到正方形画布上时两端各留约 4% 白边
+PAD = 1.12  # 横条图放到正方形画布上时两端各留约 6% 白边（产品页相框内有一圈细线，太窄会压到雪茄两端）
 
 
 def image_size(path):
@@ -628,7 +628,7 @@ def prepare_photo(path):
     strip = bool(w and h and max(w, h) > STRIP_RATIO * min(w, h))
     if not (heic or strip or os.path.getsize(path) > 2.5 * 1024 * 1024):
         return path, ext
-    longest, limit = max(w or 0, h or 0), (1800 if strip else 2000)  # 横条图补边后长边约为 1.08 倍
+    longest, limit = max(w or 0, h or 0), (1800 if strip else 2000)  # 横条图补边后长边约为 1.12 倍
     out = os.path.join(tempfile.mkdtemp(prefix="aurora-photo-"), "photo.jpg")
     if shutil.which("sips"):
         cmd = ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85"]
@@ -938,11 +938,15 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     index = {}
     for rel in walk_photos(photo_dir):
         index.setdefault(unicodedata.normalize("NFC", os.path.basename(rel)), []).append(rel)
-    plan, problems = {}, []
+    with open(os.path.join(CONTENT_DIR, "new-products.csv"), newline="", encoding="utf-8") as f:
+        to_create = {r["sku"].upper() for r in csv.DictReader(f)}
+    plan, problems, later = {}, [], set()
     for r in todo:
         p = by_sku.get(r["sku"].strip().upper())
         full = find_photo(photo_dir, r["file"], index)
-        if not p:
+        if not p and dry_run and r["sku"].strip().upper() in to_create:
+            later.add(r["sku"].strip().upper())  # 预览时还没新建，正式运行前 create-drafts 会先建好
+        elif not p:
             problems.append(f"网站上没有 SKU {r['sku']}（{r['file']}）")
         elif not full:
             problems.append(f"找不到照片 {r['file']}")
@@ -963,7 +967,8 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     for pid in done_before:  # 重新运行时，已经按同样照片配好的产品不再重复上传
         del plan[pid]
     print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图"
-          + (f"（另有 {len(done_before)} 款之前已配好，跳过）" if done_before else ""))
+          + (f"（另有 {len(done_before)} 款之前已配好，跳过）" if done_before else "")
+          + (f"；另有 {len(later)} 款新建草稿后再配图" if later else ""))
     for p, items in plan.values():
         print(f"  {p['sku']:<14} {p['name']}：" + "，".join(f"{r.get('role') or '其他'} {os.path.basename(r['file'])}"
                                                        for _, _, r in items))
@@ -1111,6 +1116,45 @@ def cmd_merge(wp, dry_run=False):
         return
     save_products(wp, keep_updates + drafts)
     print(f"✓ 已合并（改为草稿的产品在后台 产品 → 草稿 里，可以随时恢复）")
+
+
+def cmd_create_drafts(wp, dry_run=False):
+    """content/new-products.csv 里站上原来没有的产品（照片里的地区限量、特别版等）新建为草稿：
+    只有名称和分类，价格、规格、库存留空，不对外显示；照片由 photo-apply 配上，标红由 mark-review 加上。
+    已有同一 SKU 的跳过；已有同名产品（不同 SKU）的也不建，避免重复。"""
+    with open(os.path.join(CONTENT_DIR, "new-products.csv"), newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    products = wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,sku,name"})
+    skus = {(p.get("sku") or "").upper() for p in products}
+    names = {"".join(name_tokens(p["name"])): p for p in products}
+    cats = {c["slug"]: c["id"] for c in wp.get_all("wc/v3/products/categories", {"_fields": "id,slug"})}
+    todo = []
+    for r in rows:
+        if r["sku"].upper() in skus:
+            continue
+        twin = names.get("".join(name_tokens(r["name"])))
+        if twin:
+            print(f"! {r['sku']} {r['name']}：网站上已有同名的 {twin.get('sku')}，不新建")
+            continue
+        slugs = [s for s in r["categories"].split("|") if s]
+        for s in slugs:
+            if s not in cats:
+                print(f"! {r['sku']}：网站上没有分类 {s}，这个分类先不加")
+        todo.append({"sku": r["sku"], "name": r["name"], "status": "draft", "type": "simple",
+                     "categories": [{"id": cats[s]} for s in slugs if s in cats],
+                     "meta_data": [{"key": "aurora_created_from", "value": "photo"}]})
+        print(f"  新建草稿 {r['sku']}  {r['name']}")
+    print(f"新建草稿：{len(todo)} 款（表里共 {len(rows)} 款，其余已存在）")
+    if dry_run or not todo:
+        return
+    for i in range(0, len(todo), SAVE_BATCH):
+        res, _ = wp.req("POST", "wc/v3/products/batch", {"create": todo[i:i + SAVE_BATCH]})
+        for it in (res or {}).get("create", []):
+            if it.get("error"):
+                print(f"! 有一款没有建成功：{it['error'].get('message')}")
+        if len(todo) > SAVE_BATCH:
+            print(f"  已新建 {min(i + SAVE_BATCH, len(todo))}/{len(todo)}")
+    print("✓ 已新建为草稿（后台 产品 → 草稿 里可以看到，名称标红；补好资料后再发布）")
 
 
 def cmd_mark_review(wp, dry_run=False):
@@ -1402,7 +1446,7 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "rename", "merge", "mark-review",
+                                       "photo-restore", "rename", "merge", "create-drafts", "mark-review",
                                        "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
@@ -1468,6 +1512,8 @@ def main():
         cmd_rename(wp, args.dry_run)
     if args.command == "merge":
         cmd_merge(wp, args.dry_run)
+    if args.command == "create-drafts":
+        cmd_create_drafts(wp, args.dry_run)
     if args.command == "mark-review":
         cmd_mark_review(wp, args.dry_run)
     if args.command in ("preview-link", "all") and not args.dry_run:
