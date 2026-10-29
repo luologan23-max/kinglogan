@@ -51,9 +51,21 @@ with tempfile.TemporaryDirectory() as tmp:
         px = o.getpixel((o.width // 2, (o.height - 130) // 2 + 3))
         check("透明背景铺白", min(px) > 240, px)
         check("雪茄在正中", o.getpixel((o.width // 2, o.height // 2))[0] < 200, o.getpixel((o.width // 2, o.height // 2)))
+    # 照片带着「旋转 90°」的方向标记（EXIF 方向 8），像素本身是正的：上传的副本去掉标记，像素不动
+    exif = Image.Exif()
+    exif[274] = 8
     box = os.path.join(tmp, "box.jpg")
-    save_img(box, (1080, 1440))
-    check("普通照片原样上传", A.prepare_photo(box) == (box, ".jpg"))
+    Image.new("RGB", (1080, 1440), "saddlebrown").save(box, exif=exif.tobytes())
+    out2, ext2 = A.prepare_photo(box)
+    with Image.open(out2) as o, Image.open(box) as b:
+        check("普通照片去掉方向标记", out2 != box and o.getexif().get(274) is None, o.getexif().get(274))
+        check("普通照片像素不动、不重新压缩", o.size == (1080, 1440) and o.tobytes() == b.tobytes(), o.size)
+    check("原图的方向标记还在（原图不改）", Image.open(box).getexif().get(274) == 8)
+    sips_like = os.path.join(tmp, "sips.jpg")  # sips 转出来的 JPG 会带着原图的方向标记
+    Image.new("RGB", (1008, 1008), "white").save(sips_like, exif=exif.tobytes())
+    A.drop_exif(sips_like)
+    with Image.open(sips_like) as o:
+        check("转换后的 JPG 也去掉方向标记", o.getexif().get(274) is None and o.size == (1008, 1008), o.getexif())
     os.remove(out)
     check("原图没有改动", Image.open(strip).size == (900, 130))
 
@@ -136,6 +148,16 @@ with tempfile.TemporaryDirectory() as tmp:
             uploads = len(st["media"])
             log2 = run()
             check("重新运行不重复上传", len(state()["media"]) == uploads and "之前已配好，跳过" in log2, log2)
+            # 旧版处理上传的（没有去掉方向标记，网站把图转歪了）：重新运行时按新方式重传
+            pid = by_sku["CUB-023"]["id"]
+            wp.req("POST", "wc/v3/products/batch", {"update": [
+                {"id": pid, "meta_data": [{"key": "aurora_photo_prep", "value": ""}]}]})
+            run()
+            st = state()
+            redone = next(p for p in st["products"] if p["id"] == pid)
+            check("旧版处理的照片会重传", len(st["media"]) == uploads + 1
+                  and redone["images"][0]["id"] != by_sku["CUB-023"]["images"][0]["id"], len(st["media"]) - uploads)
+            uploads = len(st["media"])
 
             # 一张图坏了：其他照常上传，报出失败的那款，重跑只补它
             with open(os.path.join(hub, "1211", "乌普曼 鉴赏家2号.PNG"), "wb") as f:

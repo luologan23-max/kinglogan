@@ -620,17 +620,44 @@ def image_size(path):
         return None, None
 
 
+PHOTO_PREP = "2"  # 上传前处理方式的版本；改了处理方式就加 1，重新运行时已上传的照片会按新方式重传
+
+
+def drop_exif(path):
+    """去掉 JPG 里的 EXIF 段（方向标记、拍摄地点等），像素不动。
+    你的照片里都带着「旋转 90°」的方向标记，而像素本身已经是正的；不去掉的话 WordPress 会照着标记把图转歪。"""
+    with open(path, "rb") as f:
+        data = f.read()
+    if data[:2] != b"\xff\xd8":
+        return
+    out, i = bytearray(data[:2]), 2
+    while i + 4 <= len(data) and data[i] == 0xFF:
+        marker = data[i + 1]
+        if marker == 0xDA:  # 图像数据开始，后面原样保留
+            break
+        size = int.from_bytes(data[i + 2:i + 4], "big")
+        if not (marker == 0xE1 and data[i + 4:i + 10] == b"Exif\x00\x00"):
+            out += data[i:i + 2 + size]
+        i += 2 + size
+    out += data[i:]
+    with open(path, "wb") as f:
+        f.write(out)
+
+
 def prepare_photo(path):
-    """生成上传用的副本，原图不动：HEIC 转 JPG，大于 2.5MB 的重新压缩（长边最多 2000px）；
-    单支雪茄的横条图放到白底正方形画布正中，网站按正方形裁切缩略图时才能显示整支雪茄。其他情况原样上传。"""
+    """生成上传用的 JPG 副本，原图不动。上传的样子就是核对时看到的样子：
+    去掉 EXIF（含方向标记），按像素原样显示；HEIC 转 JPG；大于 2.5MB 的重新压缩（长边最多 2000px）；
+    单支雪茄的横条图放到白底正方形画布正中，网站按正方形裁切缩略图时才能显示整支雪茄。"""
     ext = os.path.splitext(path)[1].lower()
     heic = ext in (".heic", ".heif")
     w, h = image_size(path)
     strip = bool(w and h and max(w, h) > STRIP_RATIO * min(w, h))
-    if not (heic or strip or os.path.getsize(path) > 2.5 * 1024 * 1024):
-        return path, ext
-    longest, limit = max(w or 0, h or 0), (1800 if strip else 2000)  # 横条图补边后长边约为 1.12 倍
     out = os.path.join(tempfile.mkdtemp(prefix="aurora-photo-"), "photo.jpg")
+    if ext in (".jpg", ".jpeg") and not (strip or os.path.getsize(path) > 2.5 * 1024 * 1024):
+        shutil.copyfile(path, out)  # 普通照片不重新压缩，只去掉 EXIF
+        drop_exif(out)
+        return out, ".jpg"
+    longest, limit = max(w or 0, h or 0), (1800 if strip else 2000)  # 横条图补边后长边约为 1.12 倍
     if shutil.which("sips"):
         cmd = ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85"]
         if longest > limit:  # 只缩小不放大
@@ -640,6 +667,7 @@ def prepare_photo(path):
             side = str(round(max(image_size(out)) * PAD))
             subprocess.run(["sips", "-p", side, side, "--padColor", "FFFFFF", "-s", "formatOptions", "85", out, "--out", out],
                            check=True, capture_output=True)
+        drop_exif(out)  # sips 会把原图的方向标记带过来
         return out, ".jpg"
     try:
         from PIL import Image
@@ -658,7 +686,7 @@ def prepare_photo(path):
             canvas = Image.new("RGB", (side, side), "white")
             canvas.paste(flat, ((side - flat.width) // 2, (side - flat.height) // 2))
             flat = canvas
-        flat.save(out, "JPEG", quality=85)
+        flat.save(out, "JPEG", quality=85)  # 不写 EXIF
     return out, ".jpg"
 
 
@@ -976,7 +1004,8 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     for p, items in plan.values():
         items.sort(key=lambda x: x[0])
     done_before = [pid for pid, (p, items) in plan.items()
-                   if image_source(p) == "photo" and meta(p, "aurora_photo_files") == files_of(items)]
+                   if image_source(p) == "photo" and meta(p, "aurora_photo_files") == files_of(items)
+                   and meta(p, "aurora_photo_prep") == PHOTO_PREP]
     for pid in done_before:  # 重新运行时，已经按同样照片配好的产品不再重复上传
         del plan[pid]
     print(f"将更新 {len(plan)} 款产品，共 {sum(len(v[1]) for v in plan.values())} 张图"
@@ -1008,7 +1037,8 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
             continue
         pending.append({"id": p["id"], "images": [{"id": i} for i in ids],
                         "meta_data": [{"key": "aurora_image_source", "value": "photo"},
-                                      {"key": "aurora_photo_files", "value": files_of(items)}]})
+                                      {"key": "aurora_photo_files", "value": files_of(items)},
+                                      {"key": "aurora_photo_prep", "value": PHOTO_PREP}]})
         print(f"  已上传 {done}/{len(plan)}：{p['name']}（{len(ids)} 张）")
         if len(pending) == SAVE_BATCH or done == len(plan):  # 每 10 款保存一次，中途断了重跑会接着做
             save_products(wp, pending, "关联图片")
