@@ -82,6 +82,12 @@ with tempfile.TemporaryDirectory() as tmp:
         save_img(os.path.join(hub, "1211", "帕特加斯 路西塔尼亚2.JPG"), (1080, 1440))
         save_img(os.path.join(hub, "1211", "乌普曼 鉴赏家2号.PNG"), (900, 136))
         save_img(os.path.join(hub, "热门 2", "别的照片.PNG"), (900, 120))
+        # 另一个文件夹里有同名照片：一张内容不同（正方形，被选中就会以 PNG 原样上传），一张是一模一样的副本
+        save_img(os.path.join(hub, "热门 2", "高希霸 世纪—.PNG"), (600, 600), "navy")
+        with open(os.path.join(hub, "1211", "帕特加斯 路西塔尼亚.PNG"), "rb") as src, \
+                open(os.path.join(hub, "热门 2", "帕特加斯 路西塔尼亚.PNG"), "wb") as dst:
+            dst.write(src.read())
+        sha = {"高希霸 世纪—.PNG": A.file_sha1(os.path.join(hub, "1211", "高希霸 世纪—.PNG"))}  # 核对时记下的指纹
         mapping = os.path.join(tmp, "mapping.csv")
         rows = [
             ("高希霸 世纪—.PNG", "CUB-023", "主图", "确认"),
@@ -92,8 +98,8 @@ with tempfile.TemporaryDirectory() as tmp:
         ]
         with open(mapping, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["file", "sku", "product", "role", "order", "status", "note"])
-            w.writerows([(fl, sku, "", role, 1, st, "") for fl, sku, role, st in rows])
+            w.writerow(["file", "sha1", "sku", "product", "role", "order", "status", "note"])
+            w.writerows([(fl, sha.get(fl, ""), sku, "", role, 1, st, "") for fl, sku, role, st in rows])
 
         def state():
             return wp.req("GET", "__state")[0]
@@ -121,7 +127,8 @@ with tempfile.TemporaryDirectory() as tmp:
             check("半世纪没有被配图", by_sku["COH-MSG-25"].get("images") in (None, []), by_sku["COH-MSG-25"].get("images"))
             check("主图在前、包装照进图集", names("CUB-068") == ["cub-068", "cub-068-2"], names("CUB-068"))
             check("待确认的不上传", not by_sku["CUB-093"].get("images"), by_sku["CUB-093"].get("images"))
-            check("横条图以 JPG 上传", media[by_sku["CUB-023"]["images"][0]["id"]]["type"] == "image/jpeg")
+            check("同名照片按指纹选中核对过的那张（横条图以 JPG 上传）",
+                  media[by_sku["CUB-023"]["images"][0]["id"]]["type"] == "image/jpeg", log)
             meta = {m["key"]: m["value"] for m in by_sku["CUB-068"]["meta_data"]}
             check("记下图片来源和文件", meta.get("aurora_image_source") == "photo"
                   and meta.get("aurora_photo_files") == "帕特加斯 路西塔尼亚.PNG|帕特加斯 路西塔尼亚2.JPG", meta)
@@ -137,8 +144,8 @@ with tempfile.TemporaryDirectory() as tmp:
             rows.append(("高希霸 世纪—.PNG", "COH-MSG-25", "主图", "确认"))  # 只是为了多一款要处理的产品
             with open(mapping, "w", newline="", encoding="utf-8-sig") as f:
                 w = csv.writer(f)
-                w.writerow(["file", "sku", "product", "role", "order", "status", "note"])
-                w.writerows([(fl, sku, "", role, 1, st_, "") for fl, sku, role, st_ in rows])
+                w.writerow(["file", "sha1", "sku", "product", "role", "order", "status", "note"])
+                w.writerows([(fl, sha.get(fl, ""), sku, "", role, 1, st_, "") for fl, sku, role, st_ in rows])
             orig_upload = A.WP.upload
 
             def flaky(self, path, filename, alt):
@@ -154,6 +161,26 @@ with tempfile.TemporaryDirectory() as tmp:
             by_sku = {p["sku"]: p for p in state()["products"]}
             check("一款失败不影响其他款", bool(by_sku["COH-MSG-25"].get("images")), log3)
             check("报出失败的产品", "CUB-093" in log3 and "没有上传成功" in log3, log3)
+
+            # 没有指纹、同名照片内容又不同：不猜，整批先不上传；指纹对不上也不上传
+            def blocked(sha1):
+                with open(mapping, "w", newline="", encoding="utf-8-sig") as f:
+                    w = csv.writer(f)
+                    w.writerow(["file", "sha1", "sku", "product", "role", "order", "status", "note"])
+                    w.writerow(["高希霸 世纪—.PNG", sha1, "CUB-023", "", "主图", 1, "确认", ""])
+                buf = io.StringIO()
+                old_out, sys.stdout = sys.stdout, buf
+                try:
+                    A.cmd_photo_apply(wp, hub, mapping)
+                    return False, buf.getvalue()
+                except SystemExit:
+                    return True, buf.getvalue()
+                finally:
+                    sys.stdout = old_out
+            stopped, out = blocked("")
+            check("没有指纹且同名照片不同时不上传", stopped and "内容不同" in out, out)
+            stopped, out = blocked("0" * 40)
+            check("指纹对不上时不上传", stopped and "和核对时不一样" in out, out)
 
             # 站上没有的限量款新建为草稿（content/new-products.csv）
             with open(os.path.join(A.CONTENT_DIR, "new-products.csv"), newline="", encoding="utf-8") as f:

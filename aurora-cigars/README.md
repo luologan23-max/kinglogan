@@ -115,8 +115,9 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 - **清点**（`photo-inventory`）：扫描文件夹及子文件夹，记录每张图的路径、大小、尺寸、SHA1 指纹（找出内容完全相同的重复文件），
   生成长边 1000px 的缩略图副本，附上网站现有产品清单和按文件名的初步建议，打包成桌面上的「aurora-图片清单.zip」；
   同时把所有产品现有的图片备份成 JSON
-- **对照表**（`content/photo-mapping.csv`）：`file`（相对路径）、`sku`、`product`、`role`（主图 / 包装 / 本体 / 细节 / 其他）、
-  `order`、`status`（确认 / 待确认 / 不上传）、`note`。只有「确认」的行会上传
+- **对照表**（`content/photo-mapping.csv`）：`file`（相对路径）、`sha1`（核对时这张照片的指纹）、`sku`、`product`、
+  `role`（主图 / 包装 / 本体 / 细节 / 其他）、`order`、`status`（确认 / 待确认 / 不上传）、`note`。只有「确认」的行会上传。
+  拖进多个文件夹、不同文件夹里有同名照片时（例如「1211」和「热门 2」），按指纹上传核对过的那一张；内容对不上的不上传
 - **上传**（`photo-apply`）：先列出计划，输入 `y` 才执行；先备份涉及的产品现有图片；同一产品按 主图 → 包装 → 本体 → 细节 → 其他 排列，
   第一张是产品主图，其余进 WooCommerce 产品图库；上传的是副本（Mac 上 HEIC 转 JPG、大图缩到长边 2000px），文件按 SKU 命名，原图不动；
   完成后自动导出诊断包，诊断包会逐张试加载实拍图（`image_check`）

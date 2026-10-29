@@ -25,6 +25,7 @@ import argparse
 import base64
 import csv
 import difflib
+import hashlib
 import http.cookiejar
 import json
 import os
@@ -661,13 +662,25 @@ def prepare_photo(path):
     return out, ".jpg"
 
 
-def find_photo(photo_dir, rel, index):
-    """对照表里的照片：先按相对路径找；拖进多个文件夹时汇总目录多了一层文件夹名，再按文件名找（只有一个同名文件时才算）。"""
-    full = os.path.join(photo_dir, rel)
-    if os.path.isfile(full):
-        return full
-    hits = index.get(unicodedata.normalize("NFC", os.path.basename(rel)), [])
-    return os.path.join(photo_dir, hits[0]) if len(hits) == 1 else None
+def file_sha1(path):
+    with open(path, "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()
+
+
+def find_photo(photo_dir, rel, index, sha1=""):
+    """对照表里的照片，返回 (路径, 找不到的原因)。拖进多个文件夹时汇总目录多了一层文件夹名，所以也按文件名找；
+    几个文件夹里有同名照片时，按核对时记下的指纹（sha1）认出核对过的那一张，内容对不上的不用。"""
+    hits = [rel] if os.path.isfile(os.path.join(photo_dir, rel)) else []
+    hits += [h for h in index.get(unicodedata.normalize("NFC", os.path.basename(rel)), []) if h not in hits]
+    if not hits:
+        return None, "找不到照片"
+    paths = [os.path.join(photo_dir, h) for h in hits]
+    if sha1:
+        match = next((f for f in paths if file_sha1(f) == sha1), None)
+        return (match, "") if match else (None, f"照片内容和核对时不一样（同名的 {len(paths)} 张都对不上）")
+    if len(paths) == 1 or len({file_sha1(f) for f in paths}) == 1:
+        return paths[0], ""
+    return None, f"有 {len(paths)} 张同名照片且内容不同，不知道用哪张"
 
 
 def brand_media(wp, dry_run):
@@ -869,7 +882,6 @@ def save_backup(products, label):
 def cmd_photo_inventory(wp, photo_dir, out_path):
     """第 1 步（只读，不改网站，不改原图）：清点照片目录及子文件夹，记录路径、大小、尺寸、指纹（找重复文件），
     做缩略图副本，附上网站现有产品清单和按文件名的初步建议，打包给 Claude 逐张核对。同时备份产品现有图片。"""
-    import hashlib
     if not photo_dir or not os.path.isdir(photo_dir):
         raise SystemExit(f"✗ 找不到照片文件夹：{photo_dir}")
     files = walk_photos(photo_dir)
@@ -943,13 +955,13 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     plan, problems, later = {}, [], set()
     for r in todo:
         p = by_sku.get(r["sku"].strip().upper())
-        full = find_photo(photo_dir, r["file"], index)
+        full, why = find_photo(photo_dir, r["file"], index, (r.get("sha1") or "").strip())
         if not p and dry_run and r["sku"].strip().upper() in to_create:
             later.add(r["sku"].strip().upper())  # 预览时还没新建，正式运行前 create-drafts 会先建好
         elif not p:
             problems.append(f"网站上没有 SKU {r['sku']}（{r['file']}）")
         elif not full:
-            problems.append(f"找不到照片 {r['file']}")
+            problems.append(f"{why}：{r['file']}")
         else:
             key = (PHOTO_ROLES.get(r.get("role", "").strip(), 4), int(r.get("order") or 1))
             plan.setdefault(p["id"], (p, []))[1].append((key, full, r))
@@ -957,6 +969,7 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
     for msg in problems:
         print(f"! {msg}")
     if problems:
+        print(f"（照片文件夹里共找到 {sum(len(v) for v in index.values())} 张图片）")
         raise SystemExit("✗ 对照表和网站或照片文件夹对不上，先不上传。请把这几行发给 Claude。")
     meta = lambda p, k: next((m["value"] for m in p.get("meta_data", []) if m["key"] == k), "")
     files_of = lambda items: "|".join(os.path.basename(r["file"]) for _, _, r in items)
