@@ -1319,8 +1319,18 @@ def cmd_audit(wp, out_path):
             targets.append((f"page_{pg['slug']}", pg["link"]))
 
     css_seen = {}
-    # 记住预览 cookie：页面跳转（例如询价页转到需求单）时跳转后的页面同样按预览身份打开
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    # 页面跳转（例如询价页转到需求单）时，跳转后的地址也带上预览密钥，并记下跳到了哪里。
+    # 只靠 cookie 不可靠：服务器缓存有时不回传 Set-Cookie，跳转后就成了「即将上线」的 503 页面
+    hops = []
+
+    class KeepPreview(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if key and "aurora_preview=" not in newurl:
+                newurl += ("&" if "?" in newurl else "?") + "aurora_preview=" + key
+            hops.append(f"{code} → {newurl.split('aurora_preview=')[0].rstrip('?&')}")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), KeepPreview)
 
     def fetch(url):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 aurora-audit"})
@@ -1330,15 +1340,19 @@ def cmd_audit(wp, out_path):
     report["pages_html"] = {}
     for label, url in targets:
         full = url + ("&" if "?" in url else "?") + "aurora_preview=" + key if key else url
+        hops.clear()
         try:
             html = fetch(full).decode("utf-8", "replace")
         except Exception as e:
-            report["pages_html"][label] = {"url": url, "error": str(e)[:200]}
-            print(f"! 页面 {label}：{e}")
+            body = e.read().decode("utf-8", "replace") if isinstance(e, urllib.error.HTTPError) else ""
+            why = "（打开的是「即将上线」页面：预览身份没带上）" if "网站即将上线" in body else ""
+            report["pages_html"][label] = {"url": url, "error": str(e)[:200] + why, "redirects": list(hops),
+                                           "body": body[:500]}
+            print(f"! 页面 {label}：{e}{why}" + (f"（跳转：{'，'.join(hops)}）" if hops else ""))
             continue
         files[f"html/{label}.html"] = html.encode("utf-8")
-        report["pages_html"][label] = {"url": url, "file": f"html/{label}.html", "bytes": len(html)}
-        print(f"✓ 页面 {label}（{len(html) // 1024} KB）")
+        report["pages_html"][label] = {"url": url, "file": f"html/{label}.html", "bytes": len(html), "redirects": list(hops)}
+        print(f"✓ 页面 {label}（{len(html) // 1024} KB）" + (f"，跳转：{'，'.join(hops)}" if hops else ""))
         for href in re.findall(r"<link[^>]+rel=[\"']stylesheet[\"'][^>]*href=[\"']([^\"']+)", html) + \
                 re.findall(r"<link[^>]+href=[\"']([^\"']+)[\"'][^>]*rel=[\"']stylesheet", html):
             href = href.replace("&#038;", "&").replace("&amp;", "&")

@@ -156,7 +156,9 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, res)
         if p == "wp/v2/pages":
             if method == "GET":
-                return self.send(200, [dict(pg, content={"raw": pg["content"]}) for pg in state["pages"] if pg["slug"] == q.get("slug")])
+                hits = [pg for pg in state["pages"] if pg["slug"] == q.get("slug")] if "slug" in q else state["pages"]
+                host = f"http://{self.headers.get('Host')}"
+                return self.send(200, [dict(pg, content={"raw": pg["content"]}, link=f"{host}/{pg['slug']}/") for pg in hits])
             pg = dict(body, id=new_id())
             state["pages"].append(pg)
             return self.send(201, pg)
@@ -180,6 +182,20 @@ class H(BaseHTTPRequestHandler):
         # 简易前台：首页链接一个同站样式表和一个外站样式表（外站的不应下载）
         if not self.path.startswith("/wp-json/"):
             path = urlparse(self.path).path
+            if os.environ.get("MOCK_PRIVATE") and not path.endswith(".css"):
+                # 模拟内部预览模式 + 服务器缓存不回传 Set-Cookie：没带密钥的请求一律是「即将上线」的 503 页面
+                if "aurora_preview=mockkey123" not in self.path:
+                    body = "<html><body><p>网站即将上线</p></body></html>".encode()
+                    self.send_response(503)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path == "/request-quote/":  # 询价页转到需求单
+                    self.send_response(302)
+                    self.send_header("Location", f"http://{self.headers.get('Host')}/my-request/")
+                    self.end_headers()
+                    return
             if path.endswith(".css"):
                 body, ctype = b"body{color:#123}", "text/css"
             else:
