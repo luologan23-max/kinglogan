@@ -88,6 +88,8 @@ cd ~/Downloads && curl -sL -o aurora.zip https://github.com/luologan23-max/kingl
 … run_photos.sh apply
 # 一次做完（先全部导入、之后再核对）：清点备份 → 修正名称 → 合并同名重复 → 重复型号改草稿 → 限量款建草稿 → 拿不准的名称标红 → 按对照表配图上传
 … run_photos.sh auto
+# 删除上一次被转歪、已经没有产品在用的旧实拍图（只删按产品 SKU 命名、带 -rotated 的图，删除后不能恢复）
+… run_photos.sh cleanup
 # 撤销：按桌面上的备份恢复产品名称、图片和上架状态（用「清点时」的备份可以撤销 auto 的全部改动）
 … run_photos.sh restore ~/Desktop/aurora-产品图片备份-清点时-日期.json
 ```

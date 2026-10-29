@@ -1051,6 +1051,34 @@ def cmd_photo_apply(wp, photo_dir, mapping_csv, dry_run=False):
         print(f"! 有 {len(failed)} 款没有上传成功：" + "、".join(p["sku"] for p in failed) + "（重新运行同一条命令会只补这几款）")
 
 
+def cmd_photo_cleanup(wp, dry_run=False):
+    """删除上一次被 WordPress 转歪、已经没有产品在用的旧实拍图（文件名是「产品 SKU[-序号]-rotated.jpg」）。
+    只动本脚本上传、按产品 SKU 命名的图：品牌图、你自己传的图、还在用的图都不动。媒体文件删除后不能恢复。"""
+    products = wp.get_all("wc/v3/products", {"status": "any", "_fields": "id,sku,images"})
+    skus = {p["sku"] for p in products if p.get("sku")}
+    used = {i["id"] for p in products for i in p.get("images") or [] if i.get("id")}
+    old = []
+    for m in wp.get_all("wp/v2/media", {"media_type": "image", "_fields": "id,source_url"}):
+        name = os.path.basename(urllib.parse.urlparse(m.get("source_url") or "").path)
+        base = re.sub(r"-rotated\.jpe?g$", "", name)
+        if base == name or m["id"] in used:
+            continue
+        if base in skus or re.sub(r"-\d+$", "", base) in skus:  # 图集里的第二张起名为 SKU-2、SKU-3
+            old.append((m["id"], name))
+    print(f"没有产品在用的旧实拍图（被转歪的）：{len(old)} 张")
+    for mid, name in old[:10]:
+        print(f"  {mid}  {name}")
+    if len(old) > 10:
+        print(f"  ……另有 {len(old) - 10} 张")
+    if dry_run or not old:
+        return
+    for n, (mid, name) in enumerate(old, 1):
+        wp.delete(f"wp/v2/media/{mid}", {"force": "true"})
+        if n % 20 == 0 or n == len(old):
+            print(f"  已删除 {n}/{len(old)}")
+    print(f"✓ 已删除 {len(old)} 张旧图（产品现在用的图没有动）")
+
+
 def cmd_photo_restore(wp, backup_json):
     """按备份把产品名称、图片和上架/草稿状态恢复成备份时的样子（图片文件仍在媒体库里，只是重新关联）。"""
     with open(os.path.expanduser(backup_json), encoding="utf-8") as f:
@@ -1503,7 +1531,7 @@ def main():
     ap = argparse.ArgumentParser(description="Aurora Cigars WooCommerce 配置与导入")
     ap.add_argument("command", choices=["check", "install-plugin", "configure", "import", "images", "pages", "menu", "cleanup",
                                        "preview-link", "audit", "restore-pages", "dedupe", "photo-inventory", "photo-apply",
-                                       "photo-restore", "rename", "merge", "create-drafts", "mark-review",
+                                       "photo-restore", "photo-cleanup", "rename", "merge", "create-drafts", "mark-review",
                                        "all"])
     ap.add_argument("csv", nargs="?", help="产品 CSV 文件（import / all 需要）")
     ap.add_argument("--map", action="append", default=[], metavar="字段=列名",
@@ -1565,6 +1593,8 @@ def main():
         cmd_photo_apply(wp, args.photos, args.mapping, args.dry_run)
     if args.command == "photo-restore":
         cmd_photo_restore(wp, args.backup)
+    if args.command == "photo-cleanup":
+        cmd_photo_cleanup(wp, args.dry_run)
     if args.command == "rename":
         cmd_rename(wp, args.dry_run)
     if args.command == "merge":

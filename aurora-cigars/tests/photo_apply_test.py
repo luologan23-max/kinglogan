@@ -229,6 +229,26 @@ with tempfile.TemporaryDirectory() as tmp:
                   [c["id"] for c in punch["categories"]] == [cat_id["collection"], cat_id["punch-collection"],
                                                              cat_id["limited-editions"]], punch["categories"])
             check("没有价格", not punch.get("regular_price"), punch.get("regular_price"))
+
+            # 删除被转歪、没有产品在用的旧实拍图；其他图一律不动
+            ids = {name: wp.upload(box, name, "旧图") for name in (
+                "CUB-023-rotated.jpg", "CUB-068-2-rotated.jpg", "COH-MSG-25-rotated.jpg",  # 应删除
+                "CUB-093-rotated.jpg", "CUB-023-1.jpg", "aurora-brand-cohiba.jpg", "IMG_1234-rotated.jpg")}  # 应保留
+            by_sku = {p["sku"]: p for p in state()["products"]}
+            wp.req("POST", "wc/v3/products/batch", {"update": [  # 还在用的旧图不能删
+                {"id": by_sku["CUB-093"]["id"], "images": [{"id": ids["CUB-093-rotated.jpg"]}]}]})
+            buf = io.StringIO()
+            old_out, sys.stdout = sys.stdout, buf
+            try:
+                A.cmd_photo_cleanup(wp)
+            finally:
+                sys.stdout = old_out
+            left = {m["id"] for m in state()["media"]}
+            gone = {n for n, i in ids.items() if i not in left}
+            check("只删除没人用的旧实拍图", gone == {"CUB-023-rotated.jpg", "CUB-068-2-rotated.jpg", "COH-MSG-25-rotated.jpg"},
+                  (gone, buf.getvalue()))
+            used = {i["id"] for p in state()["products"] for i in p.get("images") or []} - {9}  # 9 是开头预置的假图片编号
+            check("产品正在用的图都还在", used <= left, used - left)
         finally:
             if home:
                 os.environ["HOME"] = home

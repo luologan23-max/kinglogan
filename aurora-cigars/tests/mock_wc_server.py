@@ -50,7 +50,8 @@ class H(BaseHTTPRequestHandler):
         if p == "wp/v2/media" and method == "POST":
             disp = self.headers.get("Content-Disposition", "")
             name = disp.split('filename="')[1].rstrip('"')
-            m = {"id": new_id(), "slug": name.rsplit(".", 1)[0].lower(), "bytes": len(raw), "type": self.headers.get("Content-Type")}
+            m = {"id": new_id(), "slug": name.rsplit(".", 1)[0].lower(), "bytes": len(raw), "type": self.headers.get("Content-Type"),
+                 "source_url": f"http://{self.headers.get('Host')}/wp-content/uploads/2026/10/{name}"}
             state["media"].append(m)
             return self.send(201, m)
         body = json.loads(raw or "null")
@@ -59,6 +60,11 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, hits)
         if p.startswith("wp/v2/media/"):
             mid = int(p.rsplit("/", 1)[1])
+            if method == "DELETE":
+                if q.get("force") != "true":  # 和 WordPress 一样：媒体不进回收站，必须 force
+                    return self.send(501, {"code": "rest_trash_not_supported"})
+                state["media"] = [x for x in state["media"] if x["id"] != mid]
+                return self.send(200, {"deleted": True})
             for m in state["media"]:
                 if m["id"] == mid:
                     m.update(body)

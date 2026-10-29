@@ -3,6 +3,7 @@
 #   bash run_photos.sh                 第 1 步：清点照片（只读）→ 桌面生成「aurora-图片清单.zip」发给 Claude 核对
 #   bash run_photos.sh apply           第 2 步：按 Claude 整理、你确认过的对照表（content/photo-mapping.csv）上传
 #   bash run_photos.sh auto            一次做完：清点备份 → 修正写错的名称 → 合并同名重复 → 重复型号改草稿 → 站上没有的限量款建成草稿 → 拿不准的名称标红 → 按 Claude 逐张核对过的对照表上传（待确认的不传）
+#   bash run_photos.sh cleanup         删除上一次被转歪、已经没有产品在用的旧实拍图
 #   bash run_photos.sh restore 备份.json  撤销：把产品图片和上架状态恢复成备份时的样子
 set -euo pipefail
 MODE="${1:-inventory}"
@@ -78,12 +79,19 @@ auto)
 	echo
 	echo "✓ 完成。请把桌面上的「aurora-图片清单.zip」「aurora-audit-配图后.zip」和终端截图发给 Claude。"
 	;;
+cleanup)
+	# 删除上一次被转歪、已经没有产品在用的旧实拍图（不用拖文件夹）
+	run "1/2 检查连接" check
+	run "2/2 删除没有产品在用的旧图" photo-cleanup
+	echo
+	echo "✓ 完成。请把终端截图发给 Claude。"
+	;;
 restore)
 	[ -f "$ARG" ] || { echo "✗ 用法：bash run_photos.sh restore 桌面上的备份文件.json"; exit 1; }
 	run "恢复产品图片" photo-restore --backup "$ARG"
 	;;
 *)
-	echo "用法：bash run_photos.sh [apply | auto | restore 备份.json]"
+	echo "用法：bash run_photos.sh [apply | auto | cleanup | restore 备份.json]"
 	exit 1
 	;;
 esac
